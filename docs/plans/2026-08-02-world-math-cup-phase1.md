@@ -842,6 +842,39 @@ Each needs at least one misconception with a real signature. Known ones worth en
 
 **Commit after each generator.** Do not batch.
 
+### Framing decisions for the standards that resist a numeric answer
+
+`AnswerSpec` is `kind: 'rational'` only. Four of the remaining standards do not
+naturally produce a single number, and each is resolved by *asking a different
+question about the same skill* rather than by extending the answer type.
+
+- **`MT.4.G.1`** — "Draw … and identify these in two-dimensional figures." The
+  drawing half cannot be assessed by typed answers at all and is out of scope;
+  say so rather than faking it. The identification half becomes **counting**:
+  *"How many right angles does this shape have?"*, *"How many pairs of parallel
+  sides does a rectangle have?"* Numeric, and genuinely the standard.
+- **`MT.4.OA.4`** — factor pairs, multiples, prime/composite. Three numeric
+  framings cover it: *"How many factor pairs does 24 have?"*; *"What is the
+  smallest number that divides 51 evenly, other than 1?"* — which tests
+  primality numerically, since the answer equals the number itself exactly when
+  the number is prime; and *"What is the remainder when 348 is divided by 6?"*
+  for the multiple question.
+- **`MT.4.MD.3`** — ask for area or perimeter, never "the dimensions". One
+  value per item.
+- **`MT.4.NBT.6`** — already resolved: one part per item, quotient or remainder,
+  stated in the prompt.
+
+**`FLU.MULT` is single-digit × single-digit only.** `MT.4.NBT.5` starts at
+two-digit × one-digit. Disjoint by construction, so the two ratings measure
+different things.
+
+**Units are handled in `normaliseInput`, not in generators.** A whitelist of
+measurement units is stripped from the end of an answer, so `250 cm` grades as
+`250`. Place-value words (`tens`, `hundreds`) are deliberately excluded — `12
+tens` means 120, and stripping it would convert an unreadable answer, which is
+re-prompted for free, into a wrong one, which is scored. Generator answer keys
+stay unitless.
+
 ---
 
 ## Task 9: The attempts log and derived ratings (TDD)

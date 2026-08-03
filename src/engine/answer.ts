@@ -88,8 +88,33 @@ export function normaliseInput(s: string): string {
   // points (`.5`) are untouched.
   t = t.replace(/\.(?!\d)/g, '')
 
+  // A trailing unit of measurement. Conversion questions ask "how many
+  // centimetres", and a child who answers `250 cm` has answered correctly;
+  // without this he gets re-prompted until he works out that the game wanted
+  // the bare number, which is a maddening way to be right.
+  //
+  // Deliberately a whitelist rather than "strip trailing letters". `12 tens`
+  // means 120, not 12 — stripping it would turn an unreadable answer (which is
+  // re-prompted, costing nothing) into a wrong one (which is scored). Only
+  // strip what cannot change the value.
+  // Applied until stable, because compound units are several tokens: an area
+  // answered as `28 sq units` needs both words taken off.
+  for (;;) {
+    const next = t.replace(UNIT_SUFFIX, '').trim()
+    if (next === t) break
+    t = next
+  }
+
   return t.trim()
 }
+
+/**
+ * Units that may follow a number without changing it. Plural `s` and a
+ * trailing full stop are allowed. Place-value words (`tens`, `hundreds`) are
+ * deliberately absent — those do change the value.
+ */
+const UNIT_SUFFIX =
+  /\s*(mm|cm|m|km|in|ft|yd|mi|inch|inches|foot|feet|yard|yards|mile|miles|mg|kg|g|lb|lbs|oz|ounce|ounces|pound|pounds|gram|grams|ml|l|litre|litres|liter|liters|cup|cups|pint|pints|quart|quarts|gallon|gallons|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours|day|days|degree|degrees|cm2|m2|sq|units?|centimetre|centimetres|centimeter|centimeters|metre|metres|meter|meters|kilometre|kilometres|kilometer|kilometers|millimetre|millimetres|millimeter|millimeters)s?\.?$/i
 
 export type AnswerSpec = { kind: 'rational'; canonical: string }
 
