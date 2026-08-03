@@ -6,9 +6,15 @@
  * nothing can quietly ship without being covered by `index.test.ts` — which is
  * what checks that each `standardId` is a real Montana code and that no two
  * generators claim the same one.
+ *
+ * `FLU.MULT` is the one id here that is not a Montana code. PAC is fluency
+ * rather than a domain, so nothing in the curriculum maps to it; the exception
+ * is named one id at a time in `index.test.ts` rather than by loosening the
+ * check, so a mistyped standard code is still caught.
  */
 
 import type { ItemGenerator } from '../types'
+import { flumult } from './flumult'
 import { mt4g1 } from './mt4g1'
 import { mt4md1 } from './mt4md1'
 import { mt4md3 } from './mt4md3'
@@ -23,6 +29,7 @@ import { mt4oa1 } from './mt4oa1'
 import { mt4oa4 } from './mt4oa4'
 
 export {
+  flumult,
   mt4g1,
   mt4md1,
   mt4md3,
@@ -50,6 +57,7 @@ export const ALL_GENERATORS: readonly ItemGenerator[] = [
   mt4md1,
   mt4md3,
   mt4g1,
+  flumult,
 ]
 
 /** The generator for a standard, or `undefined` if nothing covers it yet. */
