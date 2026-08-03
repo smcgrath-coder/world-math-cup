@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest'
+import { STANDARDS_BY_ID } from '../../../curriculum/standards.generated'
+import { makeRng } from '../rng'
+import { ALL_GENERATORS, generatorFor } from './index'
+
+describe('the generator registry', () => {
+  it('claims a standard id that actually exists', () => {
+    // A typo here would route a whole standard's practice into nothing, and the
+    // card stat it feeds would sit at its starting rating forever while looking
+    // perfectly healthy.
+    for (const gen of ALL_GENERATORS) {
+      expect(STANDARDS_BY_ID[gen.standardId], `${gen.standardId} is not a Montana standard`).toBeDefined()
+    }
+  })
+
+  it('never claims the same standard twice', () => {
+    // Two generators on one standard means `generatorFor` silently prefers
+    // whichever was registered first and the other is dead weight.
+    const ids = ALL_GENERATORS.map((g) => g.standardId)
+    expect(new Set(ids).size, `duplicate standard ids in ${ids.join(', ')}`).toBe(ids.length)
+  })
+
+  it('gives every generator a label and a usable difficulty range', () => {
+    for (const gen of ALL_GENERATORS) {
+      expect(gen.label.trim().length, `${gen.standardId} has no label`).toBeGreaterThan(0)
+      const [lo, hi] = gen.range
+      expect(lo, `${gen.standardId} range starts below 0`).toBeGreaterThanOrEqual(0)
+      expect(hi, `${gen.standardId} range ends above 99`).toBeLessThanOrEqual(99)
+      expect(hi, `${gen.standardId} has an empty range`).toBeGreaterThan(lo)
+    }
+  })
+
+  it('looks a generator up by standard id', () => {
+    expect(generatorFor('MT.4.NF.3')).toBe(ALL_GENERATORS.find((g) => g.standardId === 'MT.4.NF.3'))
+    expect(generatorFor('MT.4.NBT.5')).toBeUndefined()
+  })
+
+  it('covers the whole fraction cluster Phase 1 promised', () => {
+    // Fractions are what this app was built for. Losing one of these to a bad
+    // merge should fail a test, not go unnoticed.
+    for (const id of ['MT.4.NF.1', 'MT.4.NF.2', 'MT.4.NF.3', 'MT.4.NF.4']) {
+      expect(generatorFor(id), `no generator for ${id}`).toBeDefined()
+    }
+  })
+
+  it('produces a gradeable item from every generator at every difficulty', () => {
+    // A smoke test across the registry, so a generator that throws on some
+    // difficulty cannot reach a match just because its own test file forgot.
+    for (const gen of ALL_GENERATORS) {
+      for (let d = 0; d <= 99; d += 7) {
+        const item = gen.generate(d, makeRng(d))
+        expect(item.standardId, `${gen.standardId} at d=${d}`).toBe(gen.standardId)
+        expect(item.prompt.trim().length, `${gen.standardId} at d=${d}`).toBeGreaterThan(0)
+        expect(item.answer.canonical.trim().length, `${gen.standardId} at d=${d}`).toBeGreaterThan(0)
+      }
+    }
+  })
+})
