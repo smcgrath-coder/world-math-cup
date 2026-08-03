@@ -30,13 +30,23 @@ import { checkAnswer } from '../answer'
 import type { Item, ItemGenerator } from './types'
 
 /**
- * Seeds tried at each difficulty. With the usual `range` of about [5, 80] the
- * loop below walks 27 difficulties (every third, plus the top of the range
- * explicitly), so a generator is checked on roughly 1,600 distinct items and
- * generated about 3,200 times counting the determinism re-run. That takes
- * well under a second, so there is no reason to be stingy.
+ * Seeds tried at each difficulty.
+ *
+ * This is the dimension that decides how much of a generator's *parameter
+ * space* gets seen, and it was badly undersized at 60. Measured on
+ * `MT.4.MD.3`: 60 seeds reached 139 distinct rectangles out of 335 that the
+ * generator can actually produce — 41%. A deliberately broken answer key for a
+ * 12x5 rectangle passed the whole suite, because no sampled seed ever drew one.
+ *
+ * Uniform bugs (a wrong formula) are caught by any sample. The ones that need
+ * coverage are parameter-dependent: a special case for squares, a band
+ * boundary, an off-by-one that only bites at one shape. Those are exactly the
+ * bugs that reach a child as "you are wrong" when he is not.
+ *
+ * At 400 the same generator reaches essentially all of its space and the whole
+ * suite still finishes in a few seconds. There is no reason to be stingy.
  */
-const SEEDS = 60
+const SEEDS = 400
 
 /**
  * Difficulties a generator may be handed in real play but does not declare
@@ -200,11 +210,20 @@ export function assertGeneratorSound(
   const [lo, hi] = gen.range
   expect(hi, `${gen.standardId}: empty difficulty range`).toBeGreaterThan(lo)
 
-  // Every third difficulty, and always the top of the range — `hi` is exactly
-  // where an off-by-one in a band lookup lives, and stepping by three walks
-  // straight past it whenever the range width is not a multiple of three.
+  // EVERY difficulty in the range, plus the top of it explicitly.
+  //
+  // This used to step by three. It was tightened after a deliberately broken
+  // generator went UNCAUGHT: the mutation only affected a 12x5 rectangle, and
+  // no sampled (difficulty, seed) pair happened to draw that rectangle. A
+  // sparse sweep means a defect confined to an undrawn parameter combination
+  // ships. Given what a wrong answer key does to this particular child, the
+  // right trade is to spend the milliseconds — the whole suite runs in seconds
+  // either way.
+  //
+  // The sweep is still a sample in the seed dimension, so it is not a proof.
+  // Per-generator tests should still pin specific known-hard cases by hand.
   const difficulties: number[] = []
-  for (let d = lo; d <= hi; d += 3) difficulties.push(d)
+  for (let d = lo; d <= hi; d += 1) difficulties.push(d)
   if (difficulties[difficulties.length - 1] !== hi) difficulties.push(hi)
 
   for (const d of difficulties) {

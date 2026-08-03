@@ -20,6 +20,11 @@ describe('unit suffixes', () => {
     const cases: [string, string][] = [
       ['12 in', '12'], ['3 ft', '3'], ['5 yd', '5'], ['90 degrees', '90'],
       ['4 l', '4'], ['16 oz', '16'], ['30 min', '30'], ['28 sq units', '28'],
+      // Spelled-out forms the MD.1 and MD.3 prompts invite by name.
+      ['5000 milliliters', '5000'], ['5000 millilitres', '5000'],
+      ['3000 milligrams', '3000'], ['2 kilograms', '2'],
+      ['48 square centimeters', '48'], ['48 square feet', '48'],
+      ['3 weeks', '3'],
     ]
     for (const [given, key] of cases) {
       expect(checkAnswer(given, spec(key)).correct, `rejected "${given}"`).toBe(true)
