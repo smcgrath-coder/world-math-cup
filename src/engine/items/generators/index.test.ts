@@ -32,7 +32,9 @@ describe('the generator registry', () => {
 
   it('looks a generator up by standard id', () => {
     expect(generatorFor('MT.4.NF.3')).toBe(ALL_GENERATORS.find((g) => g.standardId === 'MT.4.NF.3'))
-    expect(generatorFor('MT.4.NBT.5')).toBeUndefined()
+    // A real Montana standard that nothing covers yet, so the miss path stays
+    // tested. MT.4.NBT.5 used to sit here and now has a generator of its own.
+    expect(generatorFor('MT.4.NBT.1')).toBeUndefined()
   })
 
   it('covers the whole fraction cluster Phase 1 promised', () => {
