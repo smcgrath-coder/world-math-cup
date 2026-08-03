@@ -207,8 +207,13 @@ const POOLS = new Map<number, Conversion[]>()
 function poolFor(index: number): Conversion[] {
   const cached = POOLS.get(index)
   if (cached) return cached
-  const wanted = BANDS[index]!.conversions
-  const pool = CONVERSIONS.filter((c) => wanted.includes(c.id as (typeof wanted)[number]))
+  // Widened to `string[]` deliberately. Each band's `conversions` is its own
+  // literal tuple type, so across the four of them `includes` would take the
+  // intersection of those types — which is `never`, and nothing can be passed
+  // to it. The ids are checked against `CONVERSIONS` on the next line anyway,
+  // which is a stronger guarantee than the literal types were giving.
+  const wanted: readonly string[] = BANDS[index]!.conversions
+  const pool = CONVERSIONS.filter((c) => wanted.includes(c.id))
   if (pool.length !== wanted.length) throw new Error(`band ${index} names an unknown conversion`)
   POOLS.set(index, pool)
   return pool
