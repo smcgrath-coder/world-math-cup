@@ -68,6 +68,7 @@ describe('opponent roster', () => {
 
   it('offers enough opposition to keep friendlies varied for months', () => {
     // With only a handful of opponents he exhausts the roster in a week.
-    expect(OPPONENTS.length).toBeGreaterThanOrEqual(50)
+    expect(OPPONENTS.length).toBe(57)
+    expect(OPPONENTS.filter((o) => !o.inWorldCup)).toHaveLength(9)
   })
 })

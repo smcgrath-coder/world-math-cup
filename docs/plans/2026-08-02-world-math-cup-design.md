@@ -371,9 +371,10 @@ wear their real counts: Brazil 5, Germany 4, Italy 4, Argentina 3, France 2,
 Uruguay 2, Spain 2 (2026), England 1. The hierarchy is honest and doubles as the
 difficulty signal, so fiction and challenge never disagree.
 
-**The roster is 56 teams** — the 48 who qualified for 2026, plus eight notable
-absentees who play friendlies and minor tournaments but not the World Cup, which
-is exactly their real situation. Italy carries four stars and no place in the
+**The roster is 57 teams** — the 48 who qualified for 2026, plus nine notable
+absentees (Italy, Nigeria, Denmark, Poland, Serbia, Chile, Cameroon, Wales,
+Peru) who play friendlies and minor tournaments but not the World Cup, which is
+exactly their real situation. Italy carries four stars and no place in the
 field, which is a story in itself. Canonical data in `src/data/opponents.ts`.
 
 Teams are identified by **kit colours and crest, not by an accurate national
