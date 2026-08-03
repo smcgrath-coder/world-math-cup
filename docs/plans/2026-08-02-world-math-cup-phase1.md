@@ -1084,6 +1084,15 @@ Typed entry. Enter submits. On-screen numpad with `/`, `.`, `-` for keyboard-les
 
 Tests: typing then Enter fires `onSubmit` with the raw string; numpad taps append; latency is measured from mount to submit; the field is focused on mount.
 
+**Required: the input must render inline in the question where the answer goes.**
+`MT.4.NF.1` asks `1/3 = ?/18` and wants `6`, but a child who understands
+perfectly may type `6/18` — the complete equivalent fraction, which is a correct
+piece of mathematics and a wrong answer to the question asked. It is currently
+caught by a `wrote-the-fraction` misconception so the response is kind and
+specific, but that is a net, not a fix. An answer box sitting visibly above
+`/18` removes the ambiguity at the source. Any generator whose answer is a
+*part* of an expression must be able to declare where the box goes.
+
 Commit: `feat(ui): typed answer input with numpad`.
 
 ---

@@ -431,6 +431,26 @@ per win, never per correct answer.
   component's full text reads "parent + specific". Preserved verbatim; display
   layers must decide whether to strip the prefix.
 
+## Measurement caveat: MT.4.NF.2 has a guess floor
+
+`MT.4.NF.2` (compare two fractions) asks the child to type back the greater of
+two fractions, because `AnswerSpec` carries rational values only. That makes it
+effectively binary: **chance alone scores 0.5**, so targeting 0.75 success is
+aiming just 25 points above guessing, and this standard's rating will read high
+relative to the other fraction standards.
+
+Consequences are bounded — it is one of seven NF standards feeding `DRI`, and
+weakest-standard probing means an inflated rating simply gets probed less. But
+it is a real validity gap, not a rounding error. Fixes, cheapest first:
+
+1. Offer three fractions rather than two at mid and high difficulty, dropping
+   chance to 0.33.
+2. Add a per-standard guessing parameter to the rating update — the standard
+   three-parameter IRT correction.
+3. Extend `AnswerSpec` with `kind: 'choice'` and handle it end to end.
+
+Decide before ratings drive anything consequential. Not blocking Phase 1.
+
 ## Open items
 
 - Locked character sheet text — to be written with Scott before art generation.
