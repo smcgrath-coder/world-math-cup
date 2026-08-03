@@ -69,6 +69,13 @@ describe('the generator registry', () => {
     }
   })
 
+  it('covers the geometry that feeds the SHO stat', () => {
+    // Shooting is angles. It is the only generator behind that stat, so losing
+    // it would leave a whole face of the player card frozen at its starting
+    // rating with nothing to show that anything is wrong.
+    expect(generatorFor('MT.4.G.1'), 'no generator for MT.4.G.1').toBeDefined()
+  })
+
   it('produces a gradeable item from every generator at every difficulty', () => {
     // A smoke test across the registry, so a generator that throws on some
     // difficulty cannot reach a match just because its own test file forgot.
