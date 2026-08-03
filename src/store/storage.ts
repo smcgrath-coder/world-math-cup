@@ -130,10 +130,29 @@ const cleanReport = (): LoadReport => ({
  * attempts, which is comfortably more than a childhood.
  */
 const ID_DIGITS = 12
+
+/**
+ * The largest counter the fixed width can hold.
+ *
+ * Past this the padding stops padding, ids start varying in length, and lexical
+ * order silently inverts — `a9999999999999` compares as *greater* than
+ * `a10000000000000`. That would reorder tied attempts on a reload and change the
+ * ratings they fold into, which is the exact failure the fixed width exists to
+ * prevent. A trillion attempts is not reachable by playing; a hand-edited or
+ * truncated counter reaches it immediately, so it is clamped rather than
+ * trusted.
+ */
+const MAX_SEQ = 10 ** ID_DIGITS - 1
 const ID_PATTERN = new RegExp(`^a\\d{${ID_DIGITS}}$`)
 
+/** A counter forced into the range the id format can actually represent. */
+function safeSeq(value: number): number {
+  if (!Number.isFinite(value)) return 1
+  return Math.min(MAX_SEQ, Math.max(1, Math.floor(value)))
+}
+
 export function attemptIdFor(seq: number): string {
-  return `a${String(seq).padStart(ID_DIGITS, '0')}`
+  return `a${String(safeSeq(seq)).padStart(ID_DIGITS, '0')}`
 }
 
 /** The counter value an id was minted from, or 0 if it was not one of ours. */
@@ -314,8 +333,8 @@ export function parseState(raw: string | null): LoadResult {
   // The counter is persisted, but the log is the authority when they disagree:
   // a truncated write can lose the counter while keeping the attempts, and a
   // reused id would let a reload change the order two tied attempts fold in.
-  const savedSeq = isFiniteNumber(parsed.seq) ? Math.floor(parsed.seq) : 1
-  const seq = Math.max(1, savedSeq, maxSeq + 1)
+  const savedSeq = isFiniteNumber(parsed.seq) ? parsed.seq : 1
+  const seq = safeSeq(Math.max(savedSeq, maxSeq + 1))
 
   return {
     state: {

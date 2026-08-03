@@ -273,6 +273,29 @@ describe('attempt ids', () => {
     expect(next.id > attemptIdFor(9)).toBe(true)
   })
 
+  it('always mints an id of the same width, whatever the counter says', () => {
+    // Past twelve digits the padding stops padding and lexical order inverts:
+    // `a9999999999999` compares as greater than `a10000000000000`. A counter
+    // that arrives corrupt must not be able to reorder the log.
+    for (const seq of [1, 5, 1e15, 9.9e99, -3, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const id = attemptIdFor(seq)
+      expect(id, `seq ${seq}`).toMatch(/^a\d{12}$/)
+      expect(id.length, `seq ${seq}`).toBe(13)
+    }
+  })
+
+  it('keeps ids sortable when the stored counter is nonsense', () => {
+    for (const seq of [9.9e99, 1e15, -5, 'lots', null, Number.NaN]) {
+      localStorage.clear()
+      seed({ version: 1, country: null, settings: DEFAULT_SETTINGS, seq, attempts: [stored(1), stored(2)] })
+      const store = new GameStore()
+      const next = store.appendAttempt(draft())!
+      expect(next.id, `seq ${String(seq)}`).toMatch(/^a\d{12}$/)
+      const ids = store.getState().attempts.map((a) => a.id)
+      expect(ids.slice().sort(), `seq ${String(seq)}`).toEqual(ids)
+    }
+  })
+
   it('breaks ties in the derive sort by insertion order for attempts sharing a millisecond', () => {
     // `derive` sorts by (at, id). Two answers stamped the same millisecond must
     // still fold in the order they happened, across a reload.
