@@ -134,8 +134,22 @@ strength and world rank are one system rather than three.
 - **Match K-factor is ~3× training K-factor.** Practice prepares; only matches
   make a rating true. This is what prevents grinding practice to inflate a stat
   before a hard opponent.
-- **Elo already blocks easy-grinding**: correct answers below your rating move it
-  by approximately nothing.
+- **Elo makes easy-grinding a bad trade** rather than blocking it outright.
+  Measured, not assumed: with SPREAD 25, 200 correct answers on items 35 points
+  below rating move the rating about 11 points, and the same gain comes from
+  fewer than 20 items pitched at the 0.75 target. A 10x tax, with diminishing
+  returns per item as the rating pulls away. An earlier draft of this doc
+  claimed ~2 points for 200 items; that was wrong, and no (SPREAD, K) pair
+  satisfies it alongside the documented 91/9 odds at a 25-point gap. The real
+  anti-grind protection is the combination of this tax, the 3x match weighting,
+  and weakest-standard probing — not any one of them alone.
+
+- **Ratings are floored at 20.** Below about 19, `difficultyForSuccess` wants a
+  negative difficulty for the easier pressures, clamps to 0, and the player then
+  gets items *harder* than the target — the opposite of what a struggling skill
+  needs, and precisely the wrong dynamic for this learner. The floor keeps every
+  pressure band achievable. Enforced in `derive.ts`, not in the Elo module,
+  which stays a pure 0–99 function.
 - **Decay** of 1–2 points per week on untouched standards, floored.
 - **Confidence**: rarely-tested standards render as a dashed card segment —
   provisional, not yet proven. A lucky run cannot lock in a false number.

@@ -903,7 +903,13 @@ export function deriveOverall(card: Card): number
 export function deriveWorldRank(overall: number): number
 ```
 
-Seed rating 50. Decay 1.5 points/week untouched, floor 25. `provisional` under 5 attempts.
+Seed rating 50. Decay 1.5 points/week untouched, decay floor 25. `provisional`
+under 5 attempts.
+
+**Hard rating floor of 20**, applied after every update and after decay. Below
+~19, `difficultyForSuccess` saturates against difficulty 0 and starts serving
+items *harder* than the target band asks for — backwards for a struggling skill.
+Test it: a standard driven down by 30 consecutive misses must not fall below 20.
 
 **Step 4:** Run — expect PASS.
 
