@@ -54,6 +54,21 @@ describe('the generator registry', () => {
     }
   })
 
+  it('covers the operations-and-algebraic-thinking work that feeds the PAS stat', () => {
+    // Multiplicative comparison and factors are what the multi-step problems
+    // later in the curriculum are built out of, so losing one should fail a test
+    // rather than quietly freeze a card stat at its starting rating.
+    for (const id of ['MT.4.OA.1', 'MT.4.OA.4']) {
+      expect(generatorFor(id), `no generator for ${id}`).toBeDefined()
+    }
+  })
+
+  it('covers the measurement work that feeds the PHY stat', () => {
+    for (const id of ['MT.4.MD.1', 'MT.4.MD.3']) {
+      expect(generatorFor(id), `no generator for ${id}`).toBeDefined()
+    }
+  })
+
   it('produces a gradeable item from every generator at every difficulty', () => {
     // A smoke test across the registry, so a generator that throws on some
     // difficulty cannot reach a match just because its own test file forgot.

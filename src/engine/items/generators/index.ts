@@ -10,6 +10,7 @@
 
 import type { ItemGenerator } from '../types'
 import { mt4md1 } from './mt4md1'
+import { mt4md3 } from './mt4md3'
 import { mt4nbt4 } from './mt4nbt4'
 import { mt4nbt5 } from './mt4nbt5'
 import { mt4nbt6 } from './mt4nbt6'
@@ -20,7 +21,7 @@ import { mt4nf4 } from './mt4nf4'
 import { mt4oa1 } from './mt4oa1'
 import { mt4oa4 } from './mt4oa4'
 
-export { mt4md1, mt4nbt4, mt4nbt5, mt4nbt6, mt4nf1, mt4nf2, mt4nf3, mt4nf4, mt4oa1, mt4oa4 }
+export { mt4md1, mt4md3, mt4nbt4, mt4nbt5, mt4nbt6, mt4nf1, mt4nf2, mt4nf3, mt4nf4, mt4oa1, mt4oa4 }
 
 export const ALL_GENERATORS: readonly ItemGenerator[] = [
   mt4nf1,
@@ -33,6 +34,7 @@ export const ALL_GENERATORS: readonly ItemGenerator[] = [
   mt4oa1,
   mt4oa4,
   mt4md1,
+  mt4md3,
 ]
 
 /** The generator for a standard, or `undefined` if nothing covers it yet. */
