@@ -236,6 +236,37 @@ He is never left not knowing, and never simply told.
 merit; unreduced fractions are correct with a nudge. Losing a goal to a formatting
 rule would poison the entire experience.
 
+### How wrong a wrong answer was — *Rion's idea*
+
+A miss is classified into one of four kinds:
+
+| Kind | Meaning | In the fiction |
+|---|---|---|
+| `misconception` | Matches a known wrong answer, so we know exactly what he did | The keeper read it all the way |
+| `near` | Wrong but in the neighbourhood — an arithmetic slip on a sound method | **Saved by the keeper** — it was on target |
+| `off` | Not close; usually the method rather than the sum | A shot that never troubled the goal |
+| `unreadable` | Could not be parsed. Re-prompt, do not score | Play stops, take it again |
+
+His pitch was emotional accuracy — 43 for 42 does not deserve the same response
+as 7 for 42 — and he is right. But it earns its keep by being *diagnostic*:
+being one out usually means the method was right and the arithmetic slipped,
+while being far out usually means the method itself was wrong. **That is how the
+tackle-back chooses which scaffold to offer** — repair the computation, or go
+back to the concept.
+
+**It never touches scoring.** A near miss is still wrong: same Elo update, same
+lost possession. If "close" earned rating, ratings would stop meaning anything
+and near-missing would become a strategy.
+
+Thresholds: within 10% relative error; or both integers and off by exactly one;
+or an exact gap of a single unit fraction of 1/4 or finer. Note the last cannot
+be implemented by comparing denominators, because `Rational` reduces on
+construction and `6/8` arrives as `3/4`.
+
+**When uncertain, classify as `near`.** Mis-labelling a real slip as "nowhere
+near" tells a child who already doubts himself that he was lost when he was one
+piece out. The opposite error merely offers a slightly mis-aimed hint.
+
 ## Coach and Tutor
 
 **Coach = *how*.** Tactical, short, in-flow, triggered when the system detects a

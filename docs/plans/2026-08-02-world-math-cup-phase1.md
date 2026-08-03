@@ -1011,6 +1011,15 @@ Tests — this is the most behaviour-dense module, so be thorough:
 - choosing `bicycle` increments `courage.hardShotsAttempted` **before** the answer is known
 - a correct shot answer scores and resets to `midfield` with possession to them
 - a wrong answer enters `tackleback` and does **not** change possession yet
+- the miss is classified via `classifyMiss` and carried on the state, so the UI
+  can narrate a `near` miss as a keeper's save and an `off` miss as a shot that
+  never troubled the goal (Rion's idea — see the design doc)
+- **`near` and `off` produce identical scoring and identical possession
+  outcomes.** Assert this directly: two matches driven with the same seed, one
+  answering near-misses and one answering wildly, must produce the same score
+  and the same rating deltas. Classification is narration and scaffold-choice
+  only
+- an `unreadable` answer does not consume a question and does not score
 - winning the tackle-back returns to the same zone with the same item re-served
 - losing the tackle-back flips possession and increments nothing punitive
 - `tackleBackTimeout` behaves exactly as losing it — the clock never costs more than the miss already did

@@ -137,3 +137,102 @@ export function checkAnswer(given: string, spec: AnswerSpec): AnswerResult {
   if (!parsed.value.equals(expected)) return { correct: false }
   return parsed.reduced ? { correct: true } : { correct: true, nudge: 'unreduced' }
 }
+
+/**
+ * How wrong a wrong answer was.
+ *
+ * Rion's idea: being one out is not the same as being nowhere near, and the
+ * game should say so. A shot the keeper tips over is a different thing from a
+ * shot into the stands, and every football fan already knows that.
+ *
+ * It earns its place because it is diagnostic, not just kind. Answering 43 when
+ * the answer is 42 usually means the method was right and the arithmetic
+ * slipped; answering 7 usually means the method itself was wrong. Those need
+ * different help, so this is how the tackle-back decides whether to repair the
+ * computation or go back to the concept.
+ *
+ * IMPORTANT: this NEVER affects scoring. A near miss is still wrong — same Elo
+ * update, same lost possession. If "close" earned rating, ratings would stop
+ * meaning anything and near-missing would become a strategy. The keeper still
+ * saves it.
+ */
+export type MissKind =
+  /** Matches a known wrong answer, so we know exactly what he did. */
+  | 'misconception'
+  /** Wrong, but in the neighbourhood — an arithmetic slip on a sound method. */
+  | 'near'
+  /** Not close. Usually the method rather than the sum. */
+  | 'off'
+  /** Could not be read at all. Re-prompt; do not score. */
+  | 'unreadable'
+
+export interface MissClassification {
+  kind: MissKind
+  /** Set when `kind` is `misconception`. */
+  misconceptionId?: string
+  /** `|given − correct| / max(|correct|, 1)`, when both parse. */
+  relativeError?: number
+}
+
+/** Within a tenth of the true value counts as on target. */
+const NEAR_RELATIVE = 0.1
+
+/**
+ * Classify a wrong answer. Behaviour is undefined for a *correct* answer — call
+ * `checkAnswer` first and only call this when it says `correct: false`.
+ *
+ * Never throws.
+ */
+export function classifyMiss(
+  given: string,
+  spec: AnswerSpec,
+  // Deliberately a structural type rather than the `Misconception` interface:
+  // that lives in `items/types.ts`, which already imports from this module, and
+  // importing back would be circular.
+  misconceptions: readonly { id: string; signature: string }[] = [],
+): MissClassification {
+  const parsed = parseGiven(given)
+  if (!parsed) return { kind: 'unreadable' }
+
+  const expected = Rational.parse(spec.canonical)
+  if (!expected) throw new Error(`bad answer spec: ${spec.canonical}`)
+
+  // A named mistake beats a distance measurement — knowing *what* he did is
+  // always more useful than knowing how far off it landed.
+  for (const m of misconceptions) {
+    const sig = Rational.parse(normaliseInput(m.signature))
+    if (sig && sig.equals(parsed.value)) {
+      return { kind: 'misconception', misconceptionId: m.id, ...distance(parsed.value, expected) }
+    }
+  }
+
+  const d = distance(parsed.value, expected)
+  return { kind: isNear(parsed.value, expected, d.relativeError) ? 'near' : 'off', ...d }
+}
+
+function distance(given: Rational, correct: Rational): { relativeError: number } {
+  const diff = Math.abs(given.toNumber() - correct.toNumber())
+  return { relativeError: diff / Math.max(Math.abs(correct.toNumber()), 1) }
+}
+
+/** A gap of 1/4 or finer counts as one piece out. */
+const NEAREST_PIECE = 4
+
+function isNear(given: Rational, correct: Rational, relativeError: number): boolean {
+  if (relativeError <= NEAR_RELATIVE) return true
+
+  // Off by one whole, on small integers. 3 when the answer is 2 is plainly a
+  // near miss, but relative error calls it 50% and would file it as off target.
+  if (given.isInteger() && correct.isInteger() && Math.abs(given.n - correct.n) === 1) return true
+
+  // One piece out.
+  //
+  // Note this cannot be done by comparing denominators: `Rational` reduces on
+  // construction, so 6/8 arrives as 3/4 and a same-denominator test would never
+  // fire for the very case it was written for. Instead, subtract exactly and ask
+  // whether the gap is a single unit fraction — 7/8 against 3/4 differs by 1/8,
+  // and 3/8 against 1/2 also differs by 1/8, both of which are one piece out
+  // whatever the reduced forms look like.
+  const gap = given.sub(correct)
+  return Math.abs(gap.n) === 1 && gap.d >= NEAREST_PIECE
+}
