@@ -319,6 +319,48 @@ camp) → **Qualifiers** (best-of series, earns a berth) → **World Cup** (grou
 three then knockouts, seeded by rank, ~7 matches) → **between cups** (rank
 persists, decay ticks, grade-5 becomes the bulk as the school year moves).
 
+### The competitive ladder is decoupled from the curriculum ladder
+
+An earlier version of this doc had grade-5 content gating the World Cup. That
+was wrong and it would have broken the game: it makes the trophy depend on
+material he will not be taught until spring, so he either hits walls on
+unfamiliar content or waits months for a first star. He would quit, and he would
+be right to.
+
+**The World Cup is winnable on grade-4 mastery alone.** A first trophy is weeks
+away, not terms away. Grade-5 content raises the ceiling rather than gating
+entry — new tournaments, stronger opponents, a second and third star. There is
+always more to reach, and the nearest thing to reach is close.
+
+Four mechanisms stop new content becoming a wall:
+
+1. **Prerequisite gating, not calendar gating.** A grade-5 standard unlocks when
+   its grade-4 prerequisites cross a rating threshold — `MT.5.NF.1` (unlike
+   denominators) waits on `MT.4.NF.1` (equivalent fractions). That is the real
+   prerequisite structure of mathematics: automatic, and needs nothing from
+   anyone.
+2. **New topics cannot damage the card.** A newly unlocked standard seeds at his
+   *current domain average*, not at 50, and runs at reduced K while provisional.
+   Being taught something new must never lower his card — that would punish him
+   for the curriculum moving.
+3. **Nothing debuts under match pressure.** A standard's first appearance is
+   always in the Training Ground with a Coach introduction. He never meets
+   unfamiliar content for the first time with a scoreline on the line.
+4. **Unknown is not wrong.** First encounters are framed as new drills.
+
+A scope-and-sequence from his teacher is a genuine enhancement but not a
+dependency — prerequisite gating works without it. What it buys is *ordering*:
+if fractions precede decimals in her plan, unlocks track her lessons and the
+game starts feeling like it helps with tonight's homework.
+
+### Onboarding
+
+The Coach explains the game once, after the country is built and before the
+try-out, in six screens, skippable and re-readable. Copy lives in
+`docs/content/coach-explainer.md`. The last screen carries the two ideas the
+whole design exists to deliver: **you can lose and still climb**, and **taking
+the hard shot counts even when it misses**.
+
 **Penalties** in knockouts only, on a draw. Five rounds alternating then sudden
 death. A **fluency** test, not a difficulty spike — drama comes from the clock and
 the stakes, never from an ambush with the hardest content in the game. PAC's
@@ -328,6 +370,21 @@ marquee moment.
 wear their real counts: Brazil 5, Germany 4, Italy 4, Argentina 3, France 2,
 Uruguay 2, Spain 2 (2026), England 1. The hierarchy is honest and doubles as the
 difficulty signal, so fiction and challenge never disagree.
+
+**The roster is 56 teams** — the 48 who qualified for 2026, plus eight notable
+absentees who play friendlies and minor tournaments but not the World Cup, which
+is exactly their real situation. Italy carries four stars and no place in the
+field, which is a story in itself. Canonical data in `src/data/opponents.ts`.
+
+Teams are identified by **kit colours and crest, not by an accurate national
+flag**. That is how football actually works — the Netherlands is orange, Italy
+is azure — and it avoids a procedural renderer that can manage Belgium but not
+Brazil's globe. Only tier 1 gets generated portrait art; everyone else is kit
+and crest, which the flag system already produces.
+
+Fifty-six opponents rather than eight is what makes the ranking a ladder worth
+climbing: friendlies stay varied for months, and beating a tier-2 side for the
+first time is its own milestone.
 
 **Streaks** are weekly, Sunday–Saturday (matching the chores app), kept by playing
 3+ days. The visible number is weeks in a row, so one busy Tuesday costs nothing.
