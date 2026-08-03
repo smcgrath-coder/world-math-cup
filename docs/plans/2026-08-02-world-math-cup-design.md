@@ -386,6 +386,20 @@ per win, never per correct answer.
   public portability ever becomes a goal.
 - Generated (rather than templated) match commentary.
 
+## Known data issues in the source standards
+
+- **`MT.4.MD.5.a` is truncated upstream.** Its statement ends mid-clause:
+  "…is equal to 1/360th of the circle, and". This is Montana's own published
+  CSV, not a parsing artifact — verified against the raw file. Preserved
+  verbatim rather than patched. Do not render it raw to the child; the angle
+  generator should supply its own wording.
+- **`MT.MP5` and `MT.MP6` are malformed** (missing the dot that `MT.MP.1`–`.4`
+  have). Outside the grade 4–5 filter, so harmless now; matters only if the
+  Mathematical Practices are ever pulled in.
+- **Component statements restate their parent inside `*…*`** then continue, so a
+  component's full text reads "parent + specific". Preserved verbatim; display
+  layers must decide whether to strip the prefix.
+
 ## Open items
 
 - Locked character sheet text — to be written with Scott before art generation.
