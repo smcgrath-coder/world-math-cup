@@ -45,6 +45,15 @@ describe('the generator registry', () => {
     }
   })
 
+  it('covers the base-ten arithmetic that feeds the DEF stat', () => {
+    // Place value is the back line. When it leaks, nothing built on top of it
+    // holds, so losing one of these should fail a test rather than quietly
+    // freeze a card stat at its starting rating.
+    for (const id of ['MT.4.NBT.4', 'MT.4.NBT.5', 'MT.4.NBT.6']) {
+      expect(generatorFor(id), `no generator for ${id}`).toBeDefined()
+    }
+  })
+
   it('produces a gradeable item from every generator at every difficulty', () => {
     // A smoke test across the registry, so a generator that throws on some
     // difficulty cannot reach a match just because its own test file forgot.
