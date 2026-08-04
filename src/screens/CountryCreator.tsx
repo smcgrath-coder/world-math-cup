@@ -301,8 +301,11 @@ export function CountryCreator({ onComplete }: CountryCreatorProps) {
             <p className="text-xs tracking-wide text-white/50 uppercase">Your country</p>
             <p
               className={clsx(
-                'truncate text-2xl font-bold',
-                name.trim().length === 0 && 'text-white/35',
+                'truncate font-bold',
+                // The prompt is a whole sentence and must never be clipped —
+                // "Name it bel…" is the first thing he reads. A real name is
+                // capped at 20 characters and fits at the larger size.
+                name.trim().length === 0 ? 'text-lg text-white/35' : 'text-2xl',
               )}
             >
               {name.trim().length === 0 ? 'Name it below' : name.trim()}
