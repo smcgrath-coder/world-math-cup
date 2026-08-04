@@ -47,6 +47,33 @@
  * coin toss. That distinction is the whole calibration for this player, and it
  * is why the roughest opponent in the game still asks him questions he expects
  * to get right.
+ *
+ * ## What makes a knockout a knockout
+ *
+ * Even with those dials, a strong side almost never scored, and the reason was
+ * not that two mistakes are hard to come by. It was that they barely had the
+ * ball: one correct answer ended their attack, so an attack was over almost
+ * before it began, and the only way they ever got possession was for him to
+ * score. The threat had to come from possession, and `stakes` is where it comes
+ * from.
+ *
+ * A knockout changes four things, all of them structural and none of them
+ * difficulty:
+ *
+ *  - **They kick off** (`kickoffIsTheirs`), so their first attack is a fact
+ *    about the occasion rather than something his own goal handed them.
+ *  - **They keep the ball until it is properly cleared** (`stopsToClear`), and
+ *    everything they created before each clearance still counts.
+ *  - **He breaks from halfway** when he clears it or picks it out of the net
+ *    (`restartZone`), so defending for longer buys him something.
+ *  - **He kicks off the second half**, which is both what football does and
+ *    what stops a long opening spell defining the match.
+ *
+ * Group games and friendlies are byte-identical to each other and to how the
+ * game played before any of this existed. That is deliberate and it is tested:
+ * the campaign should be encouraging early and frightening late, and a change
+ * meant to add jeopardy to a quarter-final has no business making his first
+ * group game harder.
  */
 
 import type { Opponent } from '../data/opponents'
@@ -65,6 +92,16 @@ export const QUESTIONS_PER_MATCH = 14
 
 /** The whistle goes at half of them. */
 export const HALFTIME_AFTER = 7
+
+/**
+ * What is riding on the match.
+ *
+ * The only thing this changes is how long the opposition keep the ball (see
+ * `stopsToClear`). Group games and friendlies are deliberately identical to each
+ * other and to how the game played before knockouts existed — encouraging early,
+ * frightening late, so the jeopardy sits where the drama is.
+ */
+export type Stakes = 'friendly' | 'group' | 'knockout'
 
 /**
  * Unanswered defensive challenges before they score, by opponent tier.
@@ -108,6 +145,55 @@ const TACKLE_BACK_MS_DEFAULT = 6500
 export function tackleBackMs(opponent: Opponent | undefined): number {
   return TACKLE_BACK_MS_BY_TIER[opponent?.tier as number] ?? TACKLE_BACK_MS_DEFAULT
 }
+
+/**
+ * How many times he has to clear the ball to end an opponent attack, by tier.
+ *
+ * Knockout matches only. Everywhere else this is 1: one correct answer wins the
+ * ball back, which is how the game has always played.
+ *
+ * This is the whole knockout mechanic, and it is deliberately about *possession*
+ * rather than about difficulty. A strong side rarely scored before, not because
+ * two mistakes are hard to make, but because they barely had the ball — one
+ * correct answer ended their attack, so an attack was over almost as soon as it
+ * started. In a knockout they keep coming: Brazil have to be cleared three
+ * times, and every mistake in between is another chance for them.
+ *
+ * It reads the way football reads. They are camped in your half, you head one
+ * away and they put it straight back in, and the danger is cumulative rather
+ * than reset by every touch. A child watching can say exactly what happened:
+ * *I got the tackle in but they kept the ball, and the third time they scored.*
+ *
+ * Tier 4 stays at 1 even in a knockout. A minnow in the last 16 is still a
+ * minnow, and being drawn against one should feel like a break rather than a
+ * trap.
+ */
+export const STOPS_TO_CLEAR_BY_TIER: Record<number, number> = { 1: 3, 2: 2, 3: 2, 4: 1 }
+
+/** One stop clears it, everywhere except a knockout. */
+export const STOPS_TO_CLEAR_DEFAULT = 1
+
+export function stopsToClear(opponent: Opponent | undefined, stakes: Stakes): number {
+  if (stakes !== 'knockout') return STOPS_TO_CLEAR_DEFAULT
+  return STOPS_TO_CLEAR_BY_TIER[opponent?.tier as number] ?? STOPS_TO_CLEAR_DEFAULT
+}
+
+/** Who kicks off. They do in a knockout; he does everywhere else. */
+export const kickoffIsTheirs = (stakes: Stakes | undefined): boolean => stakes === 'knockout'
+
+/**
+ * Where he restarts when the ball comes back to him — after clearing an attack,
+ * and after picking it out of his own net.
+ *
+ * From halfway in a knockout, from the back everywhere else. The other half of
+ * the deal: a knockout asks him to defend for longer, so getting out of it has
+ * to be worth something, or the extra work would read as nothing but a tax on
+ * having drawn a big team. It is also what football does — they committed men
+ * forward and he breaks from halfway, and a goal is restarted from the centre
+ * circle rather than from his own six-yard box.
+ */
+export const restartZone = (stakes: Stakes | undefined): Zone =>
+  stakes === 'knockout' ? 'midfield' : 'own_third'
 
 /**
  * The most an opponent may move the success target, in either direction.
@@ -222,6 +308,8 @@ export interface MatchCourage {
 export interface MatchState {
   id: string
   opponent: Opponent
+  /** What is riding on it. Knockouts give the opposition a real attack. */
+  stakes: Stakes
   /**
    * Questions asked so far, counting tackle-backs.
    *
@@ -245,8 +333,21 @@ export interface MatchState {
    * touches scoring or possession.
    */
   lastMiss: MissClassification | null
-  /** Unanswered challenges while they attack. `CONCEDE_AFTER` of them concedes. */
+  /**
+   * Chances they have had in this attack. `concedeAfter` of them concedes.
+   *
+   * Cumulative across the attack rather than consecutive. Outside a knockout
+   * that is the same thing, because the attack ends the moment he answers one
+   * correctly.
+   */
   defensiveStops: number
+  /**
+   * Times he has cleared the ball in this attack. `stopsToClear` ends it.
+   *
+   * Always 0 while he has the ball, and always 0 outside a knockout, where one
+   * clearance ends the attack the instant it is made.
+   */
+  clearances: number
   shotChoice: ShotChoice | null
   courage: MatchCourage
   /** Every attempt made this match, in order. The caller persists it. */
@@ -399,20 +500,35 @@ function biasedRatings(
 // ---------------------------------------------------------------------------
 // Starting
 
-export function startMatch(opts: { id: string; opponent: Opponent; deps: MatchDeps }): MatchState {
+export function startMatch(opts: {
+  id: string
+  opponent: Opponent
+  deps: MatchDeps
+  /** Defaults to a friendly, which is the gentlest thing the game can be. */
+  stakes?: Stakes
+}): MatchState {
   const base: MatchState = {
     id: opts.id,
     opponent: opts.opponent,
+    stakes: opts.stakes ?? 'friendly',
     questionsAsked: 0,
     questionsTotal: QUESTIONS_PER_MATCH,
-    zone: 'own_third',
-    possession: 'us',
+    // They kick off in a knockout, and he starts the match defending.
+    //
+    // Half of the knockout threat, and the half that keeps it honest: without
+    // it, the only way the opposition ever get the ball is for him to score,
+    // which would make scoring the thing that puts him in danger. A kickoff
+    // gives them a possession he did not hand them, so the jeopardy is a fact
+    // about the occasion rather than a punishment for playing well.
+    zone: kickoffIsTheirs(opts.stakes) ? 'midfield' : 'own_third',
+    possession: kickoffIsTheirs(opts.stakes) ? 'them' : 'us',
     score: [0, 0],
     phase: 'question',
     currentItem: null,
     pendingItem: null,
     lastMiss: null,
     defensiveStops: 0,
+    clearances: 0,
     shotChoice: null,
     courage: { hardShotsAttempted: 0, tackleBacksWon: 0, tackleBacksFaced: 0 },
     log: [],
@@ -440,7 +556,7 @@ export function reduce(state: MatchState, event: MatchEvent, deps: MatchDeps): M
     // Any event at all gets play going again, and none of them count for
     // anything. The team talk is a card over the top of the game, not a turn.
     case 'halftime':
-      return resumeFromHalftime(state)
+      return resumeFromHalftime(state, deps)
 
     case 'question':
       return event.type === 'answer' ? onAnswer(state, event, deps) : state
@@ -543,9 +659,29 @@ function applyAnswer(
 function onCorrect(state: MatchState, deps: MatchDeps): MatchState {
   const s: MatchState = { ...state, lastMiss: null }
 
-  // Defending: win it back, deep, and build again.
+  // Defending. One good tackle clears it in an ordinary match; in a knockout
+  // against a strong side it takes several, and until the last one they still
+  // have the ball and everything they have already created still counts.
   if (s.possession === 'them') {
-    return serveQuestion({ ...s, possession: 'us', zone: 'own_third', defensiveStops: 0 }, deps)
+    const cleared = s.clearances + 1
+    if (cleared < stopsToClear(s.opponent, s.stakes)) {
+      return serveQuestion({ ...s, clearances: cleared }, deps)
+    }
+    // Clearing a knockout attack launches a counter: they committed men forward
+    // and he breaks from halfway rather than building again from the back. The
+    // other half of the deal — a knockout asks him to defend for longer, so
+    // getting out has to be worth something, or the extra work would read as
+    // nothing but a tax on playing a big team.
+    return serveQuestion(
+      {
+        ...s,
+        possession: 'us',
+        zone: restartZone(s.stakes),
+        defensiveStops: 0,
+        clearances: 0,
+      },
+      deps,
+    )
   }
 
   // A shot was chosen, so this question was the shot. It goes in.
@@ -557,6 +693,8 @@ function onCorrect(state: MatchState, deps: MatchDeps): MatchState {
         zone: 'midfield',
         possession: 'them',
         shotChoice: null,
+        defensiveStops: 0,
+        clearances: 0,
       },
       deps,
     )
@@ -592,9 +730,10 @@ function onMiss(
       {
         ...s,
         defensiveStops: 0,
+        clearances: 0,
         score: [s.score[0], s.score[1] + 1],
         possession: 'us',
-        zone: 'own_third',
+        zone: restartZone(s.stakes),
       },
       deps,
     )
@@ -652,6 +791,7 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
     zone: 'own_third',
     shotChoice: null,
     defensiveStops: 0,
+    clearances: 0,
   }
   if (isOver(lost)) return fullTime(lost)
 
@@ -812,8 +952,32 @@ function pauseIfHalftime(state: MatchState): MatchState {
   }
 }
 
-function resumeFromHalftime(state: MatchState): MatchState {
+function resumeFromHalftime(state: MatchState, deps: MatchDeps): MatchState {
   const resumed = state.resumePhase ?? (state.currentItem === null ? 'shot_choice' : 'question')
+
+  // The second half kicks off, and the side that did not kick off the first
+  // half takes it — which in a knockout is him. An attack that was underway
+  // when the whistle went is dead, exactly as it is in football, so their
+  // chances go with it.
+  //
+  // Only from a clean break. If the whistle caught a tackle-back, a shot choice
+  // or a worked solution, that is his and it is handed back untouched: halftime
+  // has never been allowed to cost him something he was already holding, and
+  // this does not make it the exception.
+  if (kickoffIsTheirs(state.stakes) && state.possession === 'them' && resumed === 'question') {
+    return serveQuestion(
+      {
+        ...state,
+        resumePhase: null,
+        possession: 'us',
+        zone: 'midfield',
+        defensiveStops: 0,
+        clearances: 0,
+      },
+      deps,
+    )
+  }
+
   return { ...state, phase: resumed, resumePhase: null }
 }
 

@@ -6,7 +6,7 @@ import type { AttemptDraft } from '../store/storage'
 import type { Attempt, ShotChoice, StandardRating } from '../store/types'
 import { generatorFor } from './items/generators'
 import { makeRng } from './items/rng'
-import type { Item } from './items/types'
+import type { Item, Rng } from './items/types'
 import { Rational } from './rational'
 import {
   HALFTIME_AFTER,
@@ -19,10 +19,11 @@ import {
   opponentBias,
   reduce,
   startMatch,
+  stopsToClear,
   tackleBackMs,
   targetSuccessFor,
 } from './match'
-import type { MatchDeps, MatchEvent, MatchState, Phase } from './match'
+import type { MatchDeps, MatchEvent, MatchState, Phase, Stakes } from './match'
 import { PRESSURES, TARGET_SUCCESS } from './select'
 import type { Pressure } from './select'
 import { expectedScore } from './elo'
@@ -61,8 +62,12 @@ function makeDeps(seed = 7, rating = 50): MatchDeps {
   }
 }
 
-const start = (deps: MatchDeps, id = 'match-1', opponent: Opponent = BRAZIL) =>
-  startMatch({ id, opponent, deps })
+const start = (
+  deps: MatchDeps,
+  id = 'match-1',
+  opponent: Opponent = BRAZIL,
+  stakes: Stakes = 'friendly',
+) => startMatch({ id, opponent, deps, stakes })
 
 const answer = (s: MatchState, given: string, deps: MatchDeps, latencyMs = 1200) =>
   reduce(s, { type: 'answer', given, latencyMs }, deps)
@@ -113,6 +118,72 @@ function nextEvent(
     return { type: 'tackleBackTimeout' }
   }
   return { type: 'answer', given: respond(s.currentItem!, s), latencyMs: 1200 }
+}
+
+/**
+ * A player who answers every question at his true Elo probability against the
+ * difficulty he was actually served. The same player against everyone, so any
+ * difference in the results is a difference in the opposition.
+ */
+function elo(rating: number, coin: Rng) {
+  return (item: Item) =>
+    coin.int(0, 9999) / 10_000 < expectedScore(rating, item.difficulty) ? right(item) : wildMiss(item)
+}
+
+interface SimResult {
+  winRate: number
+  drawRate: number
+  /** Share of matches in which the opposition scored at all. */
+  theyScoredRate: number
+  goalsFor: number
+  goalsAgainst: number
+  /** Win rate bucketed by how many he scored. */
+  winRateByGoalsFor: Map<number, number>
+}
+
+function simulate(
+  opponent: Opponent,
+  stakes: Stakes,
+  matches = 300,
+  rating = 50,
+  shot: ShotChoice = 'box',
+): SimResult {
+  let won = 0
+  let drawn = 0
+  let theyScored = 0
+  let goalsFor = 0
+  let goalsAgainst = 0
+  const buckets = new Map<number, { n: number; won: number }>()
+
+  for (let seed = 1; seed <= matches; seed++) {
+    const deps = makeDeps(seed, rating)
+    const final = last(
+      play(start(deps, `sim-${seed}`, opponent, stakes), deps, elo(rating, makeRng(seed * 104_729 + 5)), {
+        shot,
+      }),
+    )
+    goalsFor += final.score[0]
+    goalsAgainst += final.score[1]
+    if (final.score[1] > 0) theyScored += 1
+    if (final.score[0] > final.score[1]) won += 1
+    else if (final.score[0] === final.score[1]) drawn += 1
+
+    const bucket = buckets.get(final.score[0]) ?? { n: 0, won: 0 }
+    bucket.n += 1
+    if (final.score[0] > final.score[1]) bucket.won += 1
+    buckets.set(final.score[0], bucket)
+  }
+
+  return {
+    winRate: won / matches,
+    drawRate: drawn / matches,
+    theyScoredRate: theyScored / matches,
+    goalsFor: goalsFor / matches,
+    goalsAgainst: goalsAgainst / matches,
+    winRateByGoalsFor: new Map(
+      [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([g, b]) => [g, b.won / b.n]),
+    ),
+  }
 }
 
 /** Every state a match passed through, first to last. */
@@ -587,36 +658,10 @@ describe('who we are playing', () => {
     expect(behind.standardId).toBe(ahead.standardId)
   })
 
-  /**
-   * The acceptance test: an identical player, playing the same way against
-   * everyone, answering every question at his true Elo probability against the
-   * difficulty he was actually served.
-   *
-   * Deterministic — fixed seeds throughout — so the numbers below are facts
-   * about the reducer rather than a sample that might wobble.
-   */
-  function simulate(opponent: Opponent, matches = 120, rating = 50) {
-    let won = 0
-    let conceded = 0
-    for (let seed = 1; seed <= matches; seed++) {
-      const deps = makeDeps(seed, rating)
-      const coin = makeRng(seed * 104_729 + 5)
-      const final = last(
-        play(start(deps, `sim-${seed}`, opponent), deps, (item) => {
-          const p = expectedScore(rating, item.difficulty)
-          return coin.int(0, 9999) / 10_000 < p ? right(item) : wildMiss(item)
-        }),
-      )
-      if (final.score[0] > final.score[1]) won += 1
-      conceded += final.score[1]
-    }
-    return { winRate: won / matches, concededPerMatch: conceded / matches }
-  }
-
   it('is materially harder to beat a tier-1 side than a tier-4 side', () => {
-    const brazil = simulate(BRAZIL)
-    const panama = simulate(PANAMA)
-    const curacao = simulate(CURACAO)
+    const brazil = simulate(BRAZIL, 'group', 120)
+    const panama = simulate(PANAMA, 'group', 120)
+    const curacao = simulate(CURACAO, 'group', 120)
 
     // Measured: 0.850 / 0.917 / 0.958 win, conceding 0.150 / 0.050 / 0.000 a
     // match. Asserted as inequalities with headroom rather than as pinned
@@ -629,8 +674,8 @@ describe('who we are playing', () => {
 
     // The clearest signal of the three dials working: a tier-1 side actually
     // scores, and a tier-4 side essentially never does.
-    expect(brazil.concededPerMatch).toBeGreaterThan(0.1)
-    expect(curacao.concededPerMatch).toBeLessThan(0.02)
+    expect(brazil.goalsAgainst).toBeGreaterThan(0.1)
+    expect(curacao.goalsAgainst).toBeLessThan(0.02)
   })
 
   it('would show none of that without the dials', () => {
@@ -638,7 +683,293 @@ describe('who we are playing', () => {
     // rated where the player is and both in the middle tier: identical results,
     // which is exactly what every opponent used to produce.
     const twin = (name: string): Opponent => ({ ...PANAMA, id: name, name, rating: 50, tier: 3 })
-    expect(simulate(twin('a'), 60)).toEqual(simulate(twin('b'), 60))
+    expect(simulate(twin('a'), 'group', 60)).toEqual(simulate(twin('b'), 'group', 60))
+  })
+})
+
+describe('what is riding on it', () => {
+  it('starts a friendly with the ball, and a knockout without it', () => {
+    const friendly = start(makeDeps(), 'm', BRAZIL, 'friendly')
+    const knockout = start(makeDeps(), 'm', BRAZIL, 'knockout')
+
+    expect(friendly.stakes).toBe('friendly')
+    expect(friendly.possession).toBe('us')
+    expect(friendly.zone).toBe('own_third')
+
+    expect(knockout.stakes).toBe('knockout')
+    expect(knockout.possession).toBe('them')
+    expect(knockout.zone).toBe('midfield')
+    expect(knockout.clearances).toBe(0)
+    // Still a question on the board, and still one he expects to get right.
+    expect(knockout.currentItem).not.toBeNull()
+  })
+
+  it('defaults to a friendly, which is the gentlest thing the game can be', () => {
+    const deps = makeDeps()
+    expect(startMatch({ id: 'm', opponent: BRAZIL, deps }).stakes).toBe('friendly')
+  })
+
+  it('needs the ball cleared more than once in a knockout, by tier', () => {
+    for (const stakes of ['friendly', 'group'] as Stakes[]) {
+      for (const opponent of [BRAZIL, PANAMA, CURACAO]) {
+        expect(stopsToClear(opponent, stakes)).toBe(1)
+      }
+    }
+    expect(stopsToClear(BRAZIL, 'knockout')).toBe(3)
+    expect(stopsToClear(PANAMA, 'knockout')).toBe(2)
+    expect(stopsToClear(CURACAO, 'knockout')).toBe(1)
+    expect(stopsToClear(undefined, 'knockout')).toBe(1)
+  })
+
+  it('keeps the ball through a tackle until the attack is properly cleared', () => {
+    const deps = makeDeps(5)
+    let s = start(deps, 'm', BRAZIL, 'knockout')
+    expect(s.possession).toBe('them')
+
+    // One good tackle. Against Brazil in a knockout that is not enough.
+    s = answer(s, right(s.currentItem!), deps)
+    expect(s.possession).toBe('them')
+    expect(s.clearances).toBe(1)
+
+    // A mistake in between is a chance for them, and the chance stands even
+    // after the next tackle — the danger is cumulative.
+    s = answer(s, wildMiss(s.currentItem!), deps)
+    expect(s.possession).toBe('them')
+    expect(s.defensiveStops).toBe(1)
+    expect(s.clearances).toBe(1)
+    // Not a tackle-back: defending is not where the safety net lives.
+    expect(s.phase).toBe('question')
+
+    s = answer(s, right(s.currentItem!), deps)
+    expect(s.possession).toBe('them')
+    expect(s.clearances).toBe(2)
+
+    // The third clearance ends it, and he breaks from halfway.
+    s = answer(s, right(s.currentItem!), deps)
+    expect(s.possession).toBe('us')
+    expect(s.zone).toBe('midfield')
+    expect(s.clearances).toBe(0)
+    expect(s.defensiveStops).toBe(0)
+  })
+
+  it('still concedes on the second chance, tackles in between or not', () => {
+    const deps = makeDeps(5)
+    let s = start(deps, 'm', BRAZIL, 'knockout')
+    s = answer(s, right(s.currentItem!), deps) // a tackle
+    s = answer(s, wildMiss(s.currentItem!), deps) // first chance
+    s = answer(s, right(s.currentItem!), deps) // another tackle
+    expect(s.score).toEqual([0, 0])
+
+    s = answer(s, wildMiss(s.currentItem!), deps) // second chance
+    expect(s.score).toEqual([0, 1])
+    expect(s.possession).toBe('us')
+    expect(s.zone).toBe('midfield') // a kickoff, from the centre circle
+    expect(s.defensiveStops).toBe(0)
+    expect(s.clearances).toBe(0)
+  })
+
+  it('gives him the second-half kickoff, and takes their attack with the whistle', () => {
+    const deps = makeDeps(3)
+    const trace = play(start(deps, 'm', BRAZIL, 'knockout'), deps, right)
+    const atBreak = trace.find((s) => s.phase === 'halftime')!
+    const resumed = trace[trace.indexOf(atBreak) + 1]!
+
+    if (atBreak.possession === 'them') {
+      expect(resumed.possession).toBe('us')
+      expect(resumed.zone).toBe('midfield')
+      expect(resumed.clearances).toBe(0)
+      expect(resumed.defensiveStops).toBe(0)
+    }
+    // Whatever it did, it consumed nothing.
+    expect(resumed.questionsAsked).toBe(atBreak.questionsAsked)
+    expect(resumed.log).toHaveLength(atBreak.log.length)
+    expect(resumed.score).toEqual(atBreak.score)
+  })
+
+  it('never lets the second-half whistle take a tackle-back off him', () => {
+    // The one thing halftime has never been allowed to do. A knockout does not
+    // become the exception.
+    const deps = makeDeps(21)
+    const trace = play(start(deps, 'm', BRAZIL, 'knockout'), deps, (item, s) =>
+      s.questionsAsked === HALFTIME_AFTER - 1 ? wildMiss(item) : right(item),
+    )
+    const atBreak = trace.find((s) => s.phase === 'halftime')!
+    if (atBreak.resumePhase !== 'tackleback') return
+
+    const resumed = reduce(atBreak, { type: 'dismissFeedback' }, deps)
+    expect(resumed.phase).toBe('tackleback')
+    expect(resumed.currentItem).toBe(atBreak.currentItem)
+    expect(resumed.pendingItem).toBe(atBreak.pendingItem)
+  })
+
+  // -------------------------------------------------------------------------
+  // The acceptance numbers
+
+  it('makes a tier-1 knockout a real match', () => {
+    const r = simulate(BRAZIL, 'knockout')
+
+    // Measured over 300 matches, a rating-50 player answering at his true Elo
+    // probability: 0.593 win, 0.330 draw, 0.077 loss, 1.44-0.73, and Brazil
+    // score in 57% of them. Before knockouts existed the same player won 88%
+    // and Brazil scored in 16%.
+    expect(r.winRate).toBeGreaterThanOrEqual(0.55)
+    expect(r.winRate).toBeLessThanOrEqual(0.65)
+    // They score in a majority of matches, so the threat is real rather than
+    // theoretical.
+    expect(r.theyScoredRate).toBeGreaterThan(0.5)
+    // Draws common enough that a penalty shootout is worth building.
+    expect(r.drawRate).toBeGreaterThan(0.15)
+    // And he can actually lose, which is the point of a knockout.
+    expect(1 - r.winRate - r.drawRate).toBeGreaterThan(0.02)
+  })
+
+  it('leaves a tier-4 knockout comfortably winnable', () => {
+    const r = simulate(CURACAO, 'knockout')
+
+    // A minnow in the last 16 is still a minnow. Measured 0.978.
+    expect(r.winRate).toBeGreaterThan(0.85)
+    expect(r.goalsAgainst).toBeLessThan(0.05)
+  })
+
+  it('gets harder monotonically across the tiers in a knockout too', () => {
+    const rates = [BRAZIL, PANAMA, CURACAO].map((o) => simulate(o, 'knockout', 150).winRate)
+    expect(rates[0]!).toBeLessThan(rates[1]!)
+    expect(rates[1]!).toBeLessThan(rates[2]!)
+  })
+
+  it('never punishes him for scoring', () => {
+    // The constraint that matters most. The opposition getting the ball back
+    // after a goal must never make scoring a bad idea.
+    for (const stakes of ['group', 'knockout'] as Stakes[]) {
+      const byGoals = [...simulate(BRAZIL, stakes, 400).winRateByGoalsFor.entries()]
+      expect(byGoals.length).toBeGreaterThan(2)
+      for (let i = 1; i < byGoals.length; i++) {
+        expect(byGoals[i]![1], `${stakes}: ${byGoals[i]![0]} goals`).toBeGreaterThanOrEqual(
+          byGoals[i - 1]![1],
+        )
+      }
+      // Scoring at all is the difference between winning and not.
+      expect(byGoals[0]![1]).toBe(0)
+      expect(byGoals[byGoals.length - 1]![1]).toBeGreaterThan(0.9)
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // The early campaign must not have moved
+
+  it('leaves group matches identical to friendlies, state for state', () => {
+    // The regression guard. Everything the knockout rules touch is keyed on
+    // `stakes === 'knockout'`, so a group game and a friendly are the same game
+    // — not statistically, but state for state.
+    for (let seed = 1; seed <= 12; seed++) {
+      for (const respond of [right, wildMiss, nearMiss]) {
+        const a = makeDeps(seed)
+        const b = makeDeps(seed)
+        const friendly = play(start(a, 'm', BRAZIL, 'friendly'), a, respond)
+        const group = play(start(b, 'm', BRAZIL, 'group'), b, respond)
+
+        expect(group.map((s) => ({ ...s, stakes: 'friendly' as Stakes }))).toEqual(friendly)
+      }
+    }
+  })
+
+  it('leaves the knockout rules inert outside a knockout', () => {
+    for (const stakes of ['friendly', 'group'] as Stakes[]) {
+      for (const opponent of [BRAZIL, PANAMA, CURACAO]) {
+        for (let seed = 1; seed <= 6; seed++) {
+          const deps = makeDeps(seed)
+          const trace = play(start(deps, 'm', opponent, stakes), deps, (item, s) =>
+            s.questionsAsked % 2 === 0 ? wildMiss(item) : right(item),
+          )
+          expect(trace[0]!.possession).toBe('us')
+          for (const s of trace) {
+            expect(s.clearances, `${stakes} vs ${opponent.name}`).toBe(0)
+            // Winning the ball back always puts him in his own third.
+            if (s.possession === 'us' && s.zone === 'midfield') {
+              expect(s.phase === 'question' || s.phase === 'fulltime').toBe(true)
+            }
+          }
+        }
+      }
+    }
+  })
+
+  it('keeps the early campaign encouraging', () => {
+    // Numbers, not just structure: a group game against the best side in the
+    // world is still a match he expects to win.
+    for (const stakes of ['friendly', 'group'] as Stakes[]) {
+      const r = simulate(BRAZIL, stakes, 200)
+      expect(r.winRate).toBeGreaterThan(0.85)
+      expect(r.theyScoredRate).toBeLessThan(0.25)
+    }
+  })
+
+  it('diverges from a group match in a knockout, and never in a friendly', () => {
+    const a = makeDeps(9)
+    const b = makeDeps(9)
+    const c = makeDeps(9)
+    const group = last(play(start(a, 'm', BRAZIL, 'group'), a, right))
+    const friendly = last(play(start(b, 'm', BRAZIL, 'friendly'), b, right))
+    const knockout = last(play(start(c, 'm', BRAZIL, 'knockout'), c, right))
+
+    expect({ ...friendly, stakes: 'group' as Stakes }).toEqual(group)
+    expect(knockout).not.toEqual({ ...group, stakes: 'knockout' as Stakes })
+  })
+
+  it('adds no difficulty dial: the floor holds in a knockout exactly as it does anywhere', () => {
+    // `targetSuccessFor` takes no `stakes` at all, and that is the design: the
+    // knockout threat is made of possession, never of harder questions. This
+    // pins the consequence — every question in a knockout is drawn from the
+    // same bands, at the same targets, above the same floor.
+    for (const opponent of OPPONENTS) {
+      for (const overall of [0, 20, 50, 99]) {
+        for (const pressure of ['own_third', 'midfield', 'final_third'] as Pressure[]) {
+          expect(targetSuccessFor(pressure, overall, opponent)).toBeGreaterThanOrEqual(
+            MIN_MATCH_TARGET,
+          )
+        }
+      }
+    }
+
+    // And measured, band by band: a question asked in a given part of the pitch
+    // is the same question it would have been in a group game.
+    //
+    // Note what this does *not* claim. A knockout does shift the mix — he
+    // restarts from halfway rather than from the back, so he sees fewer of the
+    // gentle `own_third` questions and more midfield ones, and the overall mean
+    // difficulty rises by about 3 points. That is where the ball is, not how
+    // hard the game decided to be, and every band he meets is still pitched
+    // where the design put it.
+    const byBand = (stakes: Stakes) => {
+      const sums = new Map<string, { sum: number; n: number }>()
+      for (let seed = 1; seed <= 40; seed++) {
+        const deps = makeDeps(seed)
+        const trace = play(start(deps, 'm', BRAZIL, stakes), deps, elo(50, makeRng(seed * 7 + 1)))
+        for (const [i, s] of trace.entries()) {
+          if (i === 0 || s.log.length === trace[i - 1]!.log.length) continue
+          const asked = trace[i - 1]!
+          const band =
+            asked.phase === 'tackleback'
+              ? 'tackleback'
+              : asked.shotChoice !== null
+                ? 'shot'
+                : asked.zone
+          const bucket = sums.get(band) ?? { sum: 0, n: 0 }
+          bucket.sum += last(s.log).difficulty
+          bucket.n += 1
+          sums.set(band, bucket)
+        }
+      }
+      return sums
+    }
+
+    const group = byBand('group')
+    const knockout = byBand('knockout')
+    for (const [band, g] of group) {
+      const k = knockout.get(band)
+      if (k === undefined || k.n < 20 || g.n < 20) continue
+      expect(Math.abs(k.sum / k.n - g.sum / g.n), band).toBeLessThan(2)
+    }
   })
 })
 
@@ -1137,10 +1468,14 @@ describe('invariants', () => {
     // Every event type is fair game in every phase here, including ones the UI
     // would never send and answers no parser can read. Nothing in the sweep is
     // allowed to throw, stall, or produce a state that breaks a rule.
+    const everyStake: Stakes[] = ['friendly', 'group', 'knockout']
+
     for (let seed = 1; seed <= 250; seed++) {
       const deps = makeDeps(seed, seed % 100)
       const chaos = makeRng(seed * 7919 + 13)
-      let s = start(deps)
+      const opponent = OPPONENTS[seed % OPPONENTS.length]!
+      const stakes = everyStake[seed % everyStake.length]!
+      let s = start(deps, `m${seed}`, opponent, stakes)
       let steps = 0
 
       while (s.phase !== 'fulltime' && steps < 500) {
@@ -1183,7 +1518,13 @@ describe('invariants', () => {
         expect(['own_third', 'midfield', 'final_third']).toContain(next.zone)
         expect(next.defensiveStops).toBeGreaterThanOrEqual(0)
         expect(next.defensiveStops).toBeLessThan(concedeAfter(next.opponent))
-        if (next.possession === 'us') expect(next.defensiveStops).toBe(0)
+        expect(next.clearances).toBeGreaterThanOrEqual(0)
+        expect(next.clearances).toBeLessThan(stopsToClear(next.opponent, next.stakes))
+        if (next.possession === 'us') {
+          expect(next.defensiveStops).toBe(0)
+          expect(next.clearances).toBe(0)
+        }
+        expect(next.stakes).toBe(stakes)
         if (next.phase === 'question' || next.phase === 'tackleback' || next.phase === 'feedback') {
           expect(next.currentItem, `${next.phase} with nothing to show`).not.toBeNull()
         }
