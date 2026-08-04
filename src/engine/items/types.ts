@@ -30,6 +30,21 @@ export interface Item {
   difficulty: number
   /** Plain-text prompt. Fractions are written `a/b`. */
   prompt: string
+  /**
+   * The same question with `{}` marking where the answer goes, for an input
+   * rendered inside the expression rather than after it.
+   *
+   * Optional, and only worth supplying when the answer is a *part* of an
+   * expression rather than the whole of it. `MT.4.NF.1` asks `1/3 = ?/18` and
+   * wants `6`; a child who understands perfectly may answer `6/18`, which is
+   * correct mathematics and the wrong answer to the question asked. A box
+   * sitting visibly above `/18` removes that ambiguity at the source rather
+   * than catching it afterwards.
+   *
+   * `prompt` stays the full sentence either way — it is what the film room and
+   * the tutor show, and neither of them has an input to put anywhere.
+   */
+  promptWithSlot?: string
   answer: AnswerSpec
   /** Ordered worked steps. Shown only after a failed tackle-back. */
   workedSteps: string[]

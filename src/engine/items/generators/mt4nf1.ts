@@ -101,6 +101,11 @@ export const mt4nf1: ItemGenerator = {
       standardId: 'MT.4.NF.1',
       difficulty: d,
       prompt: `${a}/${b} = ?/${targetDen}. What is the missing top number?`,
+      // The one thing the sentence cannot do on its own: put the box where the
+      // answer belongs. `6/18` is correct mathematics and the wrong answer to
+      // the question asked, and an input sitting above `/18` is a better answer
+      // to that than any wording is.
+      promptWithSlot: `${a}/${b} = {}/${targetDen}`,
       answer: { kind: 'rational', canonical: String(answer) },
       params: { a, b, mult, targetDen },
       workedSteps: workedSteps(a, b, mult, targetDen, answer),

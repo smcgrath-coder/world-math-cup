@@ -121,6 +121,19 @@ describe('MT.4.NF.1 equivalent fractions', () => {
     }
   })
 
+  it('says where the answer box goes, so the box sits above the denominator', () => {
+    // The `wrote-the-fraction` misconception is a net under this. The slot is
+    // the fix: with the box sitting above `/12`, writing `9/12` into it is no
+    // longer the natural thing to do.
+    for (let s = 0; s < 40; s++) {
+      const item = mt4nf1.generate(30, makeRng(s))
+      const { a, b, targetDen } = item.params as Record<string, number>
+      expect(item.promptWithSlot).toBe(`${a}/${b} = {}/${targetDen}`)
+      // The sentence stays whole: the film room and the tutor still read it.
+      expect(item.prompt).toContain('What is the missing top number?')
+    }
+  })
+
   it('clamps difficulties outside its range instead of throwing', () => {
     expect(mt4nf1.generate(0, makeRng(4)).difficulty).toBe(5)
     expect(mt4nf1.generate(99, makeRng(4)).difficulty).toBe(70)
