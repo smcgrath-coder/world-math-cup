@@ -76,12 +76,14 @@ export interface ChargeGlyphProps extends PreviewProps {
   charge: Charge
   color: string
   size?: number
+  /** The colour behind the glyph. Its detail is painted in this. */
+  field?: string
 }
 
-export function ChargeGlyph({ charge, color, size, label, className }: ChargeGlyphProps) {
+export function ChargeGlyph({ charge, color, size, field, label, className }: ChargeGlyphProps) {
   return (
     <img
-      src={toDataUri(chargeSvg(charge, color, { size }))}
+      src={toDataUri(chargeSvg(charge, color, { size, field }))}
       alt={label ?? ''}
       className={className}
       draggable={false}

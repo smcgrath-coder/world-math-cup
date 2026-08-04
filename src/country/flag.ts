@@ -93,6 +93,11 @@ export interface PaletteColor {
  * looked like a printing fault rather than a design. Black started as a
  * blue-tinted slate, which put it next to navy; a neutral black is far enough
  * from navy that a flag using both still reads as two colours.
+ *
+ * Pine was moved for a different reason: it was `--color-pitch-dark` exactly,
+ * so on the creator's own background its swatch rendered as a hole rather than
+ * as a colour. A palette entry that is invisible against the app's chrome is a
+ * choice he cannot see he has.
  */
 export const PALETTE: readonly PaletteColor[] = [
   { id: 'white', name: 'White', hex: '#FFFFFF' },
@@ -104,7 +109,7 @@ export const PALETTE: readonly PaletteColor[] = [
   { id: 'gold', name: 'Gold', hex: '#FACC15' },
   { id: 'lime', name: 'Lime', hex: '#84CC16' },
   { id: 'green', name: 'Green', hex: '#16A34A' },
-  { id: 'pine', name: 'Pine', hex: '#14532D' },
+  { id: 'pine', name: 'Pine', hex: '#166534' },
   { id: 'teal', name: 'Teal', hex: '#0D9488' },
   { id: 'sky', name: 'Sky', hex: '#38BDF8' },
   { id: 'blue', name: 'Blue', hex: '#1D4ED8' },
@@ -890,13 +895,22 @@ export function flagSvg(spec: FlagSpec, opts?: SizeOpts): string {
 /**
  * One charge on its own, for the picker.
  *
- * Cut-outs are drawn as `none`, so a bear's eyes are holes and whatever the
- * button is sitting on shows through them.
+ * `field` is the colour the glyph will be shown against, and it matters: the
+ * detail on these shapes — a bear's eyes, a football's panels, a boot's laces —
+ * is *painted*, not punched. Filling with `none` paints nothing rather than
+ * clearing what is underneath, so a caller that does not say what is behind the
+ * glyph gets a bear with no eyes and a football that is a plain disc. Defaults
+ * to white, which is right for the light card a charge is usually shown on.
  */
-export function chargeSvg(charge: Charge, color: string, opts?: { size?: number }): string {
+export function chargeSvg(
+  charge: Charge,
+  color: string,
+  opts?: { size?: number; field?: string },
+): string {
   const ink = safeColor(color)
+  const field = pickColor(opts?.field, '#FFFFFF')
   const size = usableSize(opts?.size) ?? 48
-  const art = isCharge(charge) && charge !== 'none' ? CHARGE_ART[charge](ink, 'none') : ''
+  const art = isCharge(charge) && charge !== 'none' ? CHARGE_ART[charge](ink, field) : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${n(size)}" height="${n(size)}">${art}</svg>`
 }
 

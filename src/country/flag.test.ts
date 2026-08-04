@@ -494,6 +494,24 @@ describe('chargeSvg', () => {
 
   it('will not take a colour that is not a colour', () => {
     expect(chargeSvg('star', '"><script>x</script>')).not.toContain('script')
+    expect(chargeSvg('bear', '#FFFFFF', { field: 'red; drop table' })).not.toContain('drop')
+  })
+
+  it('draws its detail in the colour it is being shown against', () => {
+    // A bear's eyes and a football's panels are drawn, not punched: an SVG fill
+    // of `none` paints nothing at all rather than clearing what is beneath it,
+    // so a picker that does not say what is behind the glyph gets a blank disc
+    // where the football should be.
+    for (const charge of ['ball', 'bear', 'wolf', 'leaf', 'boot', 'flame', 'eagle'] as const) {
+      const glyph = chargeSvg(charge, '#FFFFFF', { field: '#166534' })
+      expect(glyph, charge).toContain('#166534')
+    }
+  })
+
+  it('still renders without being told the backdrop', () => {
+    for (const charge of CHARGES) {
+      expect(chargeSvg(charge, '#FFFFFF').startsWith('<svg '), charge).toBe(true)
+    }
   })
 })
 
