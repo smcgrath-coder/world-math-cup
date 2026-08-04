@@ -27,7 +27,13 @@ before the try-out, and available any time from the Coach button.
 >
 > Let's find out what you can do.
 
-*[Start the try-out]* · *[Skip — I know how this works]*
+*[Go on then]* · *[Skip — I know how this works]*
+
+> Note: an earlier draft labelled this button "Start the try-out". It does not
+> start the try-out — five screens follow. A button that promises a question
+> and delivers more reading is a small lie told to a child in the first ten
+> seconds. The try-out is promised on screen 6, where tapping actually starts
+> it.
 
 ---
 

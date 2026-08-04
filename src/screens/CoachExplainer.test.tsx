@@ -17,7 +17,7 @@ const button = (name: string | RegExp) => screen.getByRole('button', { name })
 async function readAll(user: ReturnType<typeof userEvent.setup>): Promise<string[]> {
   const said: string[] = [document.body.textContent ?? '']
   for (let i = 1; i < SCREEN_COUNT; i++) {
-    await user.click(button(i === 1 ? 'Start the try-out' : 'Next'))
+    await user.click(button(i === 1 ? 'Go on then' : 'Next'))
     said.push(document.body.textContent ?? '')
   }
   return said
@@ -71,7 +71,7 @@ describe('CoachExplainer', () => {
     const user = userEvent.setup()
     render(<CoachExplainer />)
 
-    await user.click(button('Start the try-out'))
+    await user.click(button('Go on then'))
     expect(screen.getByText(/It[’']s not a test/)).toBeInTheDocument()
 
     await user.click(button('Back'))

@@ -56,7 +56,11 @@ const P = 'text-[15px] leading-relaxed text-white/85 sm:text-base'
 const SCREENS: readonly CoachScreen[] = [
   {
     title: 'Welcome',
-    forward: 'Start the try-out',
+    // NOT "Start the try-out" — five screens follow this one, and a button that
+    // promises a question and delivers more reading is a small lie told to a
+    // child in the first ten seconds. The try-out is promised on the last
+    // screen, where tapping actually starts it.
+    forward: 'Go on then',
     body: (
       <>
         <p className={P}>Right. You&rsquo;re the manager, the captain and the whole squad.</p>
