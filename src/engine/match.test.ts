@@ -9,20 +9,34 @@ import { makeRng } from './items/rng'
 import type { Item } from './items/types'
 import { Rational } from './rational'
 import {
-  CONCEDE_AFTER,
   HALFTIME_AFTER,
+  MAX_OPPONENT_BIAS,
+  MIN_MATCH_TARGET,
   PREREQUISITE,
   QUESTIONS_PER_MATCH,
   chooseScaffold,
+  concedeAfter,
+  opponentBias,
   reduce,
   startMatch,
+  tackleBackMs,
+  targetSuccessFor,
 } from './match'
 import type { MatchDeps, MatchEvent, MatchState, Phase } from './match'
+import { PRESSURES, TARGET_SUCCESS } from './select'
+import type { Pressure } from './select'
+import { expectedScore } from './elo'
+import type { Opponent } from '../data/opponents'
 
 // ---------------------------------------------------------------------------
 // Fixtures
 
+/** Tier 1, rating 94: the final boss. */
 const BRAZIL = OPPONENTS.find((o) => o.id === 'brazil')!
+/** Tier 4, rating 56: the gentlest opponent on the roster. */
+const CURACAO = OPPONENTS.find((o) => o.id === 'curacao')!
+/** Tier 3, rating 70, for the middle of the conceding ladder. */
+const PANAMA = OPPONENTS.find((o) => o.id === 'panama')!
 
 /** Every rated standard at the same rating, which is what a fresh player has. */
 function ratingsAt(rating: number): Map<string, StandardRating> {
@@ -43,11 +57,12 @@ function makeDeps(seed = 7, rating = 50): MatchDeps {
     ratings: ratingsAt(rating),
     rng: makeRng(seed),
     now: () => (t += 1000),
+    playerOverall: rating,
   }
 }
 
-const start = (deps: MatchDeps, id = 'match-1') =>
-  startMatch({ id, opponent: BRAZIL, deps })
+const start = (deps: MatchDeps, id = 'match-1', opponent: Opponent = BRAZIL) =>
+  startMatch({ id, opponent, deps })
 
 const answer = (s: MatchState, given: string, deps: MatchDeps, latencyMs = 1200) =>
   reduce(s, { type: 'answer', given, latencyMs }, deps)
@@ -382,8 +397,8 @@ describe('a miss loosens the ball', () => {
 
 describe('defending', () => {
   /** Concede once, so the ball is theirs. */
-  function defending(deps: MatchDeps): MatchState {
-    const s = start(deps)
+  function defending(deps: MatchDeps, opponent = BRAZIL): MatchState {
+    const s = start(deps, 'match-1', opponent)
     const missed = answer(s, wildMiss(s.currentItem!), deps)
     const lost = reduce(missed, { type: 'tackleBackTimeout' }, deps)
     return reduce(lost, { type: 'dismissFeedback' }, deps)
@@ -401,25 +416,229 @@ describe('defending', () => {
     expect(won.phase).toBe('question')
   })
 
-  it('concedes exactly one goal on the third unanswered challenge, then resets', () => {
-    const deps = makeDeps()
-    let s = defending(deps)
+  for (const opponent of [BRAZIL, PANAMA, CURACAO]) {
+    const limit = concedeAfter(opponent)
 
-    for (let i = 1; i < CONCEDE_AFTER; i++) {
+    it(`concedes exactly one goal after ${limit} unanswered challenges — ${opponent.name}`, () => {
+      const deps = makeDeps()
+      let s = defending(deps, opponent)
+
+      for (let i = 1; i < limit; i++) {
+        s = answer(s, wildMiss(s.currentItem!), deps)
+        expect(s.defensiveStops).toBe(i)
+        expect(s.score).toEqual([0, 0])
+        expect(s.possession).toBe('them')
+        // A defensive miss is not a tackle-back; a run of them is the price.
+        expect(s.phase).toBe('question')
+      }
+
       s = answer(s, wildMiss(s.currentItem!), deps)
-      expect(s.defensiveStops).toBe(i)
-      expect(s.score).toEqual([0, 0])
-      expect(s.possession).toBe('them')
-      // A defensive miss is not a tackle-back; three of them is the price.
-      expect(s.phase).toBe('question')
+      expect(s.score).toEqual([0, 1])
+      expect(s.defensiveStops).toBe(0)
+      expect(s.possession).toBe('us')
+      expect(s.zone).toBe('own_third')
+      expect(s.courage.tackleBacksFaced).toBe(1) // only the one from the opening miss
+    })
+  }
+
+  it('gives a tier-1 side one fewer chance than a tier-3 side, from the same position', () => {
+    const strong = makeDeps(9)
+    const middling = makeDeps(9)
+    let a = defending(strong, BRAZIL)
+    let b = defending(middling, PANAMA)
+
+    a = answer(a, wildMiss(a.currentItem!), strong)
+    b = answer(b, wildMiss(b.currentItem!), middling)
+    a = answer(a, wildMiss(a.currentItem!), strong)
+    b = answer(b, wildMiss(b.currentItem!), middling)
+
+    // Two missed challenges: Brazil have scored, Panama have not.
+    expect(a.score).toEqual([0, 1])
+    expect(b.score).toEqual([0, 0])
+    expect(b.defensiveStops).toBe(2)
+  })
+})
+
+describe('who we are playing', () => {
+  const NORMAL_PLAY: Pressure[] = ['own_third', 'midfield', 'final_third']
+
+  it('never lets any opponent push normal play below a 0.55 success target', () => {
+    // The guardrail. A capable but avoidant child who freezes in front of things
+    // he fears are too hard must never be handed a coin flip, whoever he draws
+    // and however far behind them he is.
+    for (const opponent of OPPONENTS) {
+      for (let overall = 0; overall <= 99; overall++) {
+        for (const pressure of NORMAL_PLAY) {
+          const target = targetSuccessFor(pressure, overall, opponent)
+          expect(target, `${opponent.name} vs ${overall} at ${pressure}`).toBeGreaterThanOrEqual(
+            MIN_MATCH_TARGET,
+          )
+        }
+      }
+    }
+  })
+
+  it('holds the floor for a rating-20 player against Brazil', () => {
+    for (const pressure of NORMAL_PLAY) {
+      expect(targetSuccessFor(pressure, 20, BRAZIL)).toBeGreaterThanOrEqual(MIN_MATCH_TARGET)
+    }
+    expect(targetSuccessFor('midfield', 20, BRAZIL)).toBe(TARGET_SUCCESS.midfield - MAX_OPPONENT_BIAS)
+  })
+
+  it('never moves a band by more than the cap, in either direction', () => {
+    for (const opponent of OPPONENTS) {
+      for (const overall of [0, 20, 50, 75, 99]) {
+        for (const pressure of PRESSURES) {
+          const target = targetSuccessFor(pressure, overall, opponent)
+          const base = TARGET_SUCCESS[pressure]
+          expect(target, `${pressure} vs ${opponent.name}`).toBeLessThanOrEqual(
+            base + MAX_OPPONENT_BIAS + 1e-9,
+          )
+          expect(Math.abs(target - base)).toBeLessThanOrEqual(MAX_OPPONENT_BIAS + 1e-9)
+        }
+      }
+    }
+  })
+
+  it('leaves the bands he chose for himself below the floor, where they belong', () => {
+    // Flooring a bicycle kick at 0.55 would quietly delete the risk he chose to
+    // take, so a band already below the floor keeps its own target as its floor.
+    // Which means the dial is asymmetric for those two bands: a weak opponent
+    // makes a spectacular a little more likely to come off, a strong one never
+    // makes it less likely than the design intended.
+    expect(targetSuccessFor('bicycle', 50, CURACAO)).toBeLessThan(MIN_MATCH_TARGET)
+    expect(targetSuccessFor('bicycle', 50, BRAZIL)).toBe(TARGET_SUCCESS.bicycle)
+    expect(targetSuccessFor('outside18', 50, BRAZIL)).toBe(TARGET_SUCCESS.outside18)
+    expect(targetSuccessFor('bicycle', 99, CURACAO)).toBe(
+      TARGET_SUCCESS.bicycle + MAX_OPPONENT_BIAS,
+    )
+    // Bands above the floor take the full hit and stop there.
+    expect(targetSuccessFor('box', 50, BRAZIL)).toBe(MIN_MATCH_TARGET)
+    expect(targetSuccessFor('midfield', 50, BRAZIL)).toBe(TARGET_SUCCESS.midfield - MAX_OPPONENT_BIAS)
+  })
+
+  it('leaves penalties exactly where the design put them', () => {
+    for (const opponent of OPPONENTS) {
+      expect(targetSuccessFor('penalty', 20, opponent)).toBe(TARGET_SUCCESS.penalty)
+      expect(targetSuccessFor('penalty', 99, opponent)).toBe(TARGET_SUCCESS.penalty)
+    }
+  })
+
+  it('turns both ways: the bias is negative against a stronger side, positive against a weaker one', () => {
+    expect(opponentBias(50, BRAZIL)).toBe(-MAX_OPPONENT_BIAS)
+    expect(opponentBias(50, CURACAO)).toBeLessThan(0)
+    expect(opponentBias(50, CURACAO)).toBeGreaterThan(-MAX_OPPONENT_BIAS)
+    expect(opponentBias(90, CURACAO)).toBe(MAX_OPPONENT_BIAS)
+    expect(opponentBias(BRAZIL.rating, BRAZIL)).toBe(0)
+    // Junk in, no bias out.
+    expect(opponentBias(Number.NaN, BRAZIL)).toBe(-MAX_OPPONENT_BIAS)
+    expect(opponentBias(50, undefined)).toBe(0)
+  })
+
+  it('asks harder questions against Brazil than against Curaçao, same seed, same answers', () => {
+    let brazil = 0
+    let curacao = 0
+    const seeds = 20
+
+    for (let seed = 1; seed <= seeds; seed++) {
+      const hard = makeDeps(seed)
+      const easy = makeDeps(seed)
+      const hardMatch = last(play(start(hard, 'm', BRAZIL), hard, right))
+      const easyMatch = last(play(start(easy, 'm', CURACAO), easy, right))
+
+      brazil += hardMatch.log.reduce((sum, a) => sum + a.difficulty, 0) / hardMatch.log.length
+      curacao += easyMatch.log.reduce((sum, a) => sum + a.difficulty, 0) / easyMatch.log.length
     }
 
-    s = answer(s, wildMiss(s.currentItem!), deps)
-    expect(s.score).toEqual([0, 1])
-    expect(s.defensiveStops).toBe(0)
-    expect(s.possession).toBe('us')
-    expect(s.zone).toBe('own_third')
-    expect(s.courage.tackleBacksFaced).toBe(1) // only the one from the opening miss
+    expect(brazil / seeds).toBeGreaterThan(curacao / seeds)
+  })
+
+  it('publishes a shorter tackle-back clock for a stronger side', () => {
+    expect(tackleBackMs(BRAZIL)).toBe(5000)
+    expect(tackleBackMs(PANAMA)).toBe(6500)
+    expect(tackleBackMs(CURACAO)).toBe(8000)
+    expect(tackleBackMs(undefined)).toBe(6500)
+
+    // On the state too, so the UI has one place to read it.
+    expect(start(makeDeps(), 'm', BRAZIL).tackleBackMs).toBe(5000)
+    expect(start(makeDeps(), 'm', CURACAO).tackleBackMs).toBe(8000)
+  })
+
+  it('gives every tier a concede limit, and gives none of them nothing', () => {
+    expect(concedeAfter(BRAZIL)).toBe(2)
+    expect(concedeAfter(PANAMA)).toBe(3)
+    expect(concedeAfter(CURACAO)).toBe(4)
+    expect(concedeAfter(undefined)).toBe(3)
+    for (const opponent of OPPONENTS) {
+      expect(concedeAfter(opponent), opponent.name).toBeGreaterThanOrEqual(2)
+      expect(concedeAfter(opponent), opponent.name).toBeLessThanOrEqual(4)
+    }
+  })
+
+  it('does not make the help harder — the scaffold ignores the opponent', () => {
+    // Brazil may ask harder questions and allow less time. Brazil may not make
+    // the rung back into the match harder. `playerOverall` is what drives the
+    // bias, so a scaffold that reacted to the opponent would move with it.
+    const item = generatorFor('MT.4.NBT.5')!.generate(60, makeRng(1))
+    const behind = chooseScaffold(item, { kind: 'near' }, { ...makeDeps(3), playerOverall: 20 })
+    const ahead = chooseScaffold(item, { kind: 'near' }, { ...makeDeps(3), playerOverall: 90 })
+
+    expect(behind.difficulty).toBe(ahead.difficulty)
+    expect(behind.standardId).toBe(ahead.standardId)
+  })
+
+  /**
+   * The acceptance test: an identical player, playing the same way against
+   * everyone, answering every question at his true Elo probability against the
+   * difficulty he was actually served.
+   *
+   * Deterministic — fixed seeds throughout — so the numbers below are facts
+   * about the reducer rather than a sample that might wobble.
+   */
+  function simulate(opponent: Opponent, matches = 120, rating = 50) {
+    let won = 0
+    let conceded = 0
+    for (let seed = 1; seed <= matches; seed++) {
+      const deps = makeDeps(seed, rating)
+      const coin = makeRng(seed * 104_729 + 5)
+      const final = last(
+        play(start(deps, `sim-${seed}`, opponent), deps, (item) => {
+          const p = expectedScore(rating, item.difficulty)
+          return coin.int(0, 9999) / 10_000 < p ? right(item) : wildMiss(item)
+        }),
+      )
+      if (final.score[0] > final.score[1]) won += 1
+      conceded += final.score[1]
+    }
+    return { winRate: won / matches, concededPerMatch: conceded / matches }
+  }
+
+  it('is materially harder to beat a tier-1 side than a tier-4 side', () => {
+    const brazil = simulate(BRAZIL)
+    const panama = simulate(PANAMA)
+    const curacao = simulate(CURACAO)
+
+    // Measured: 0.850 / 0.917 / 0.958 win, conceding 0.150 / 0.050 / 0.000 a
+    // match. Asserted as inequalities with headroom rather than as pinned
+    // numbers — the point is that opponent identity changes the result at all,
+    // which before the three dials it did not, by a margin no re-tuning should
+    // quietly erase.
+    expect(curacao.winRate).toBeGreaterThan(brazil.winRate + 0.05)
+    expect(brazil.winRate).toBeLessThan(panama.winRate)
+    expect(panama.winRate).toBeLessThan(curacao.winRate)
+
+    // The clearest signal of the three dials working: a tier-1 side actually
+    // scores, and a tier-4 side essentially never does.
+    expect(brazil.concededPerMatch).toBeGreaterThan(0.1)
+    expect(curacao.concededPerMatch).toBeLessThan(0.02)
+  })
+
+  it('would show none of that without the dials', () => {
+    // The same simulation against two sides that differ only in name, both
+    // rated where the player is and both in the middle tier: identical results,
+    // which is exactly what every opponent used to produce.
+    const twin = (name: string): Opponent => ({ ...PANAMA, id: name, name, rating: 50, tier: 3 })
+    expect(simulate(twin('a'), 60)).toEqual(simulate(twin('b'), 60))
   })
 })
 
@@ -567,11 +786,12 @@ describe('halftime', () => {
   })
 
   it('resumes a shot choice it interrupted, without taking the shot for him', () => {
-    // Two lost, two conceded challenges, then a break away: the seventh answer
+    // Two lost, two survived challenges, then a break away: the seventh answer
     // arrives in the final third, so the whistle goes with the choice still on
-    // the table.
+    // the table. Panama rather than Brazil because the count depends on how many
+    // defensive challenges the opponent allows.
     const deps = makeDeps(21)
-    const trace = play(start(deps), deps, (item, s) =>
+    const trace = play(start(deps, 'match-1', PANAMA), deps, (item, s) =>
       s.questionsAsked < 4 ? wildMiss(item) : right(item),
     )
     const atBreak = trace.find((s) => s.phase === 'halftime')!
@@ -962,7 +1182,7 @@ describe('invariants', () => {
         expect(['us', 'them']).toContain(next.possession)
         expect(['own_third', 'midfield', 'final_third']).toContain(next.zone)
         expect(next.defensiveStops).toBeGreaterThanOrEqual(0)
-        expect(next.defensiveStops).toBeLessThan(CONCEDE_AFTER)
+        expect(next.defensiveStops).toBeLessThan(concedeAfter(next.opponent))
         if (next.possession === 'us') expect(next.defensiveStops).toBe(0)
         if (next.phase === 'question' || next.phase === 'tackleback' || next.phase === 'feedback') {
           expect(next.currentItem, `${next.phase} with nothing to show`).not.toBeNull()

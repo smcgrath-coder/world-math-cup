@@ -30,17 +30,35 @@
  * and never mutates.** An unexpected event in a phase is a no-op that returns
  * the same state, because a crash mid-match is unrecoverable for a player who
  * cannot open the devtools.
+ *
+ * ## What makes Brazil Brazil
+ *
+ * A strong opponent turns three dials, and deliberately not a fourth. Questions
+ * come pitched a little harder (`targetSuccessFor`), the tackle-back clock is
+ * shorter (`tackleBackMs`), and a bad defensive spell is punished sooner
+ * (`concedeAfter`). What a strong opponent may never do is make the *help*
+ * harder: the tackle-back scaffold keeps its own targets whoever is on the other
+ * side, because the scaffold is the rung back to the question, not a second
+ * test.
+ *
+ * The difficulty dial is capped hard, at ±0.10 of success probability and never
+ * below 0.55 in normal play. Beating Brazil is meant to be difficult because of
+ * the *chain* of questions a goal takes, not because any single question is a
+ * coin toss. That distinction is the whole calibration for this player, and it
+ * is why the roughest opponent in the game still asks him questions he expects
+ * to get right.
  */
 
 import type { Opponent } from '../data/opponents'
-import { SEED_RATING } from '../store/derive'
+import { RATED_STANDARD_IDS, SEED_RATING } from '../store/derive'
 import type { Attempt, AttemptContext, ShotChoice, StandardRating } from '../store/types'
 import { checkAnswer, classifyMiss } from './answer'
 import type { MissClassification } from './answer'
-import { difficultyForSuccess } from './elo'
+import { SPREAD, difficultyForSuccess } from './elo'
 import { generatorFor } from './items/generators'
 import type { Item, ItemGenerator, Rng } from './items/types'
-import { selectItem } from './select'
+import { TARGET_SUCCESS, selectItem } from './select'
+import type { Pressure } from './select'
 
 /** The length of a match. Everything else here is measured against it. */
 export const QUESTIONS_PER_MATCH = 14
@@ -48,8 +66,73 @@ export const QUESTIONS_PER_MATCH = 14
 /** The whistle goes at half of them. */
 export const HALFTIME_AFTER = 7
 
-/** Unanswered defensive challenges before they score. */
-export const CONCEDE_AFTER = 3
+/**
+ * Unanswered defensive challenges before they score, by opponent tier.
+ *
+ * The clearest of the three opponent dials: a strong side punishes a bad spell
+ * faster. Three is the middle of the range rather than a default that happens to
+ * be safe — tier 1 gives him two challenges to win the ball back, tier 4 gives
+ * him four.
+ */
+export const CONCEDE_AFTER_BY_TIER: Record<number, number> = { 1: 2, 2: 3, 3: 3, 4: 4 }
+
+/** Where an opponent with a tier the roster does not have lands. */
+const CONCEDE_AFTER_DEFAULT = 3
+
+export function concedeAfter(opponent: Opponent | undefined): number {
+  return CONCEDE_AFTER_BY_TIER[opponent?.tier as number] ?? CONCEDE_AFTER_DEFAULT
+}
+
+/**
+ * How long the tackle-back clock runs, by opponent tier.
+ *
+ * The reducer times nothing — it publishes the budget so the UI has one source
+ * of truth for it, on `MatchState.tackleBackMs` as well as here. It remains
+ * subject to `settings.timersEnabled`, which turns every clock in the game off
+ * at once and must keep doing so.
+ *
+ * Note which way this dial points: a harder opponent gets a *shorter* clock, so
+ * the pressure lands on the scaffold he has already been given rather than on
+ * the question he missed. Even at tier 1 the clock running out costs exactly
+ * what answering wrong costs, and no more.
+ */
+export const TACKLE_BACK_MS_BY_TIER: Record<number, number> = {
+  1: 5000,
+  2: 6500,
+  3: 6500,
+  4: 8000,
+}
+
+const TACKLE_BACK_MS_DEFAULT = 6500
+
+export function tackleBackMs(opponent: Opponent | undefined): number {
+  return TACKLE_BACK_MS_BY_TIER[opponent?.tier as number] ?? TACKLE_BACK_MS_DEFAULT
+}
+
+/**
+ * The most an opponent may move the success target, in either direction.
+ *
+ * Ten points of probability is a real difference over a chain of four questions
+ * — 0.75^4 is 0.32 against 0.65^4 at 0.18, so Brazil roughly halves the chance
+ * of a given attack ending in a goal — while leaving every individual question
+ * one he expects to get right.
+ */
+export const MAX_OPPONENT_BIAS = 0.1
+
+/**
+ * The floor under the adjusted target in normal play.
+ *
+ * The guardrail, and the one number in this file that exists purely because of
+ * who is playing. He is capable but freezes in front of anything he suspects is
+ * too hard for him, so no opponent — at any rating gap, at any rating of his own
+ * — is allowed to push ordinary play toward a coin flip.
+ *
+ * It is a floor, never a lift: the bands he chooses for himself (`outside18` at
+ * 0.5, `bicycle` at 0.38) are deliberately below it and stay below it, because
+ * the courage track pays out on attempting those whether or not they come off.
+ * Raising them to 0.55 would quietly delete the risk he chose to take.
+ */
+export const MIN_MATCH_TARGET = 0.55
 
 /**
  * How many recent standards a fresh question tries to avoid.
@@ -174,6 +257,13 @@ export interface MatchState {
    * including a tackle-back, whose scaffold has to survive the break.
    */
   resumePhase: PlayPhase | null
+  /**
+   * The tackle-back clock this opponent allows, in milliseconds.
+   *
+   * Published for the UI, which owns the actual timer; nothing in here reads it.
+   * Still subject to `settings.timersEnabled`.
+   */
+  tackleBackMs: number
 }
 
 export interface MatchDeps {
@@ -181,8 +271,129 @@ export interface MatchDeps {
   rng: Rng
   /** Injected so tests control time and the reducer stays pure. */
   now: () => number
+  /**
+   * His overall rating, for pitching questions against this opponent.
+   *
+   * Passed in rather than derived here: `deriveCard` needs `now` and the whole
+   * log, and the reducer has no business folding either.
+   */
+  playerOverall: number
   /** Big matches go after the gaps rather than practising evenly. */
   probeWeakest?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// The opponent
+
+/**
+ * How far this opponent moves the success target, from −0.10 to +0.10.
+ *
+ * The gap is measured in `SPREAD`s, which is the natural unit: one spread (25
+ * points) is already 91/9 odds between two rated players, so a full spread of
+ * difference earns the full bias and everything beyond it earns no more. A
+ * fresh 50-rated player therefore meets Brazil (94) at the cap and Curaçao (56)
+ * at about a quarter of it.
+ *
+ * Positive when he outrates the opponent, which makes questions easier — the
+ * dial turns both ways, so a minnow really is a minnow.
+ */
+export function opponentBias(playerOverall: number, opponent: Opponent | undefined): number {
+  const player = Number.isFinite(playerOverall) ? playerOverall : SEED_RATING
+  const rating = Number.isFinite(opponent?.rating) ? opponent!.rating : SEED_RATING
+  const spreads = (player - rating) / SPREAD
+  return MAX_OPPONENT_BIAS * Math.max(-1, Math.min(1, spreads))
+}
+
+/**
+ * The success rate a question actually aims at, once the opponent has had a say.
+ *
+ * Two rails, and both matter:
+ *
+ *  - The bias can never move a band by more than `MAX_OPPONENT_BIAS`.
+ *  - The result never drops below `MIN_MATCH_TARGET` — unless the band was
+ *    already below it by design, in which case the floor is that band's own
+ *    target. `bicycle` stays a long shot; it just never becomes a longer one
+ *    than the design asked for, and never becomes a gift either.
+ *
+ * Penalties are exempt from the whole mechanism. A shootout is already the most
+ * pressured moment the game has, and its 0.8 target is what stops it being a
+ * cruel one.
+ */
+export function targetSuccessFor(
+  pressure: Pressure,
+  playerOverall: number,
+  opponent: Opponent | undefined,
+): number {
+  const raw = TARGET_SUCCESS[pressure]
+  const base = typeof raw === 'number' && Number.isFinite(raw) ? raw : TARGET_SUCCESS.midfield
+  if (pressure === 'penalty') return base
+
+  const floor = Math.min(base, MIN_MATCH_TARGET)
+  const ceiling = Math.min(0.99, base + MAX_OPPONENT_BIAS)
+  return Math.min(ceiling, Math.max(floor, base + opponentBias(playerOverall, opponent)))
+}
+
+/**
+ * The opponent bias, expressed as a shift in rating rather than in probability.
+ *
+ * `selectItem` takes a pressure, not a target, and it is not this module's to
+ * change. But difficulty is linear in rating:
+ *
+ *     difficultyForSuccess(r, p) = r + SPREAD * log10(1/p - 1)
+ *
+ * so asking for target `p'` at rating `r` is exactly asking for the band's own
+ * target `p` at rating `r + delta`, where
+ *
+ *     delta = SPREAD * (log10(1/p' - 1) - log10(1/p - 1))
+ *
+ * Shifting the ratings selection reads, rather than regenerating the item
+ * afterwards, is what keeps selection honest: the generator is chosen already
+ * knowing the difficulty that will be asked of it, so one whose band cannot
+ * reach it is discounted up front instead of silently clamped after the fact.
+ */
+function ratingShiftFor(
+  pressure: Pressure,
+  playerOverall: number,
+  opponent: Opponent | undefined,
+): number {
+  const raw = TARGET_SUCCESS[pressure]
+  const base = typeof raw === 'number' && Number.isFinite(raw) ? raw : TARGET_SUCCESS.midfield
+  const adjusted = targetSuccessFor(pressure, playerOverall, opponent)
+  if (adjusted === base) return 0
+
+  const shift = SPREAD * (Math.log10(1 / adjusted - 1) - Math.log10(1 / base - 1))
+  return Number.isFinite(shift) ? shift : 0
+}
+
+/**
+ * The ratings map selection should read for this question.
+ *
+ * Every rated standard is shifted by the same amount, including any missing from
+ * the map, so the dial applies uniformly even on a fresh save. A uniform shift
+ * leaves selection's weakness weighting untouched by construction — it is
+ * measured against the mean of the candidates — so this changes how hard the
+ * question is and nothing about which topic it comes from.
+ */
+function biasedRatings(
+  pressure: Pressure,
+  opponent: Opponent | undefined,
+  deps: MatchDeps,
+): Map<string, StandardRating> {
+  const shift = ratingShiftFor(pressure, deps.playerOverall, opponent)
+  if (shift === 0) return deps.ratings
+
+  const out = new Map<string, StandardRating>()
+  for (const id of new Set([...deps.ratings.keys(), ...RATED_STANDARD_IDS])) {
+    const existing = deps.ratings.get(id)
+    out.set(id, {
+      standardId: id,
+      attempts: existing?.attempts ?? 0,
+      lastSeenAt: existing?.lastSeenAt ?? null,
+      provisional: existing?.provisional ?? true,
+      rating: ratingFor(deps.ratings, id) + shift,
+    })
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +418,7 @@ export function startMatch(opts: { id: string; opponent: Opponent; deps: MatchDe
     log: [],
     halftimeShown: false,
     resumePhase: null,
+    tackleBackMs: tackleBackMs(opts.opponent),
   }
   return { ...base, currentItem: nextQuestionItem(base, opts.deps) }
 }
@@ -373,7 +585,9 @@ function onMiss(
   // all.
   if (s.possession === 'them') {
     const stops = s.defensiveStops + 1
-    if (stops < CONCEDE_AFTER) return serveQuestion({ ...s, defensiveStops: stops }, deps)
+    if (stops < concedeAfter(s.opponent)) {
+      return serveQuestion({ ...s, defensiveStops: stops }, deps)
+    }
     return serveQuestion(
       {
         ...s,
@@ -460,6 +674,11 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
  *    problem: knowing he added the denominators tells us he is doing the wrong
  *    thing confidently, not that he slipped.
  *
+ * The opponent gets no say here, deliberately. Brazil may ask harder questions
+ * and allow less time; Brazil may not make the help harder. A scaffold pitched
+ * against the opposition instead of against the child would stop being a
+ * scaffold.
+ *
  * Exported because it is the one decision in this file worth testing directly.
  */
 export function chooseScaffold(item: Item, miss: MissClassification, deps: MatchDeps): Item {
@@ -527,7 +746,7 @@ function onChooseShot(state: MatchState, shot: ShotChoice, deps: MatchDeps): Mat
     shotChoice: shot,
     pendingItem: null,
     currentItem: selectItem({
-      ratings: deps.ratings,
+      ratings: biasedRatings(shot, state.opponent, deps),
       pressure: shot,
       rng: deps.rng,
       probeWeakest: deps.probeWeakest,
@@ -552,10 +771,10 @@ function serveQuestion(state: MatchState, deps: MatchDeps): MatchState {
   })
 }
 
-/** An ordinary question, pitched at wherever the ball is. */
+/** An ordinary question, pitched at wherever the ball is and at who we are playing. */
 function nextQuestionItem(state: MatchState, deps: MatchDeps): Item {
   return selectItem({
-    ratings: deps.ratings,
+    ratings: biasedRatings(state.zone, state.opponent, deps),
     pressure: state.zone,
     rng: deps.rng,
     probeWeakest: deps.probeWeakest,
