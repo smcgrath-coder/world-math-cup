@@ -509,6 +509,23 @@ it is a real validity gap, not a rounding error. Fixes, cheapest first:
 
 Decide before ratings drive anything consequential. Not blocking Phase 1.
 
+## Generator tuning noticed while playing
+
+None of these are wrong, but each wastes a question or reads badly. Worth a
+pass once the game is playable end to end.
+
+- **`FLU.MULT` emits ×0 and ×1 facts at mid difficulty.** The first question of
+  a real try-out came up as `1 × 2` at difficulty 45. It is not wrong, but it
+  measures nothing, and the try-out only has four fluency questions to spend.
+  Those facts belong at the bottom of the band.
+- **`MT.4.NBT.4` can open with `9327 + 7504`** at difficulty 45 — a heavy first
+  impression for a child who is wary of maths.
+- **`MT.4.MD.1` asks "How many cups are in 7 gallons?"** at difficulty 69, which
+  needs a memorised 16-cups-per-gallon fact rather than reasoning about units.
+- **`MT.4.OA.4`'s multiple framing is wordy**: "Is 210 a multiple of 3? Give the
+  remainder when 210 is divided by 3 — a remainder of 0 means yes." That is a
+  lot of reading before any thinking starts.
+
 ## Open items
 
 - Locked character sheet text — to be written with Scott before art generation.
