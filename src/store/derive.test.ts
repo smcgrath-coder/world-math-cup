@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { K_TRAINING, updateRating } from '../engine/elo'
+import { K_MATCH, K_TRAINING, updateRating } from '../engine/elo'
+import { makeRng } from '../engine/items/rng'
+import {
+  START_DIFFICULTY,
+  STEP_DOWN,
+  STEP_UP,
+  currentDifficulty,
+  currentStep,
+  isComplete,
+  recordAnswer,
+  startTryout,
+  trackFor,
+  tryoutPlan,
+} from '../engine/tryout'
+import type { TryoutTrack } from '../engine/tryout'
 import { DOMAIN_TO_STAT, STANDARDS_BY_ID } from '../curriculum/standards.generated'
 import type { CardStat, DomainCode } from '../curriculum/standards.generated'
 import type { Attempt, AttemptContext, ShotChoice, StandardRating } from './types'
@@ -134,10 +148,15 @@ describe('deriveRatings — K by context', () => {
     expect((one('match') - SEED_RATING) / (one('training') - SEED_RATING)).toBeCloseTo(3, 5)
   })
 
-  it('treats tryout as training and tackleback and penalty as match', () => {
-    expect(one('tryout')).toBeCloseTo(one('training'), 10)
+  it('treats tackleback and penalty as match', () => {
     expect(one('tackleback')).toBeCloseTo(one('match'), 10)
     expect(one('penalty')).toBeCloseTo(one('match'), 10)
+  })
+
+  // `tryout` is deliberately absent from this list: it does not fold through
+  // Elo at all. See "the try-out places rather than accumulates" below.
+  it('does not fold a try-out attempt through Elo', () => {
+    expect(one('tryout')).not.toBeCloseTo(one('training'), 3)
   })
 })
 
@@ -335,6 +354,232 @@ describe('deriveRatings — seeding a newly taught standard', () => {
   it('seeds FLU.MULT at the default, since fluency belongs to no domain', () => {
     const ratings = deriveRatings(history, lastAt(history))
     expect(ratings.get('FLU.MULT')!.rating).toBe(SEED_RATING)
+  })
+})
+
+/**
+ * The try-out is a placement test, so its ladder *is* the measurement.
+ *
+ * Folding it through Elo a second time only damps it: at `K_TRAINING`, halved
+ * again while provisional, and with a domain's four questions spread over up to
+ * four standards, a 72-point ladder spread used to arrive as a 6-point card
+ * spread. A child who cannot do fractions and one who has mastered them got
+ * near-identical first sessions, which defeats the entire point of measuring.
+ */
+describe('deriveRatings — the try-out places rather than accumulates', () => {
+  /** A full twenty-four question session, built from the real plan. */
+  function session(
+    correctFor: (track: TryoutTrack) => boolean,
+    { seed = 7, at = T0 } = {},
+  ): Attempt[] {
+    return tryoutPlan(makeRng(seed)).map((step, i) =>
+      attempt({
+        id: `t${String(i).padStart(4, '0')}`,
+        at: at + i * MINUTE,
+        standardId: step.standardId,
+        // The screen records what the generator actually built, not the rung it
+        // asked for, so the ladder can only be replayed from the right/wrong
+        // flags. Deliberately nothing like the rung, to prove that.
+        difficulty: 45,
+        correct: correctFor(step.track),
+        context: 'tryout',
+        latencyMs: 8000,
+      }),
+    )
+  }
+
+  const cardFor = (as: Attempt[]) => {
+    const now = lastAt(as)
+    return deriveCard(deriveRatings(as, now), as, now)
+  }
+
+  const TOP_RUNG = START_DIFFICULTY + 4 * STEP_UP // 77
+  const BOTTOM_RUNG = START_DIFFICULTY - 4 * STEP_DOWN // 5, under the floor
+
+  /**
+   * A session runs over twenty-four minutes here, so a standard asked early has
+   * already rusted a few thousandths of a point by the time the last question is
+   * answered. Real and correct — decay runs from `lastSeenAt` — but it means the
+   * placement lands just under its rung rather than exactly on it.
+   */
+  const SESSION_RUST = DECAY_PER_WEEK * ((24 * MINUTE) / WEEK_MS)
+
+  function expectAtRung(value: number, rung: number, label = '') {
+    expect(value, label).toBeLessThanOrEqual(rung)
+    expect(value, label).toBeGreaterThan(rung - SESSION_RUST - 1e-9)
+  }
+
+  it('reaches the rungs the try-out screen itself reaches', () => {
+    expect(TOP_RUNG).toBe(77)
+    expect(BOTTOM_RUNG).toBe(5)
+    expect(BOTTOM_RUNG).toBeLessThan(RATING_FLOOR)
+  })
+
+  it('replays exactly the ladder the try-out screen runs', () => {
+    // Anti-divergence: play a session through the engine's own state machine and
+    // require derive to land on the same rungs. If the screen's ladder ever
+    // changes, this fails rather than quietly drifting.
+    const correctFor = (track: TryoutTrack) => track === 'NF' || track === 'MD'
+    let state = startTryout(7)
+    const log: Attempt[] = []
+    while (!isComplete(state)) {
+      const step = currentStep(state)!
+      const correct = correctFor(step.track)
+      log.push(
+        attempt({
+          id: `p${String(log.length).padStart(4, '0')}`,
+          at: T0 + log.length * MINUTE,
+          standardId: step.standardId,
+          difficulty: currentDifficulty(state),
+          correct,
+          context: 'tryout',
+        }),
+      )
+      state = recordAnswer(state, correct)
+    }
+
+    const ratings = deriveRatings(log, lastAt(log))
+    for (const id of RATED_STANDARD_IDS) {
+      expectAtRung(ratings.get(id)!.rating, Math.max(RATING_FLOOR, state.ladder[trackFor(id)]), id)
+    }
+  })
+
+  it('seeds every domain stat at the top rung for an all-correct try-out', () => {
+    const card = cardFor(session(() => true))
+    for (const stat of ['SHO', 'PAS', 'DRI', 'DEF', 'PHY'] as CardStat[]) {
+      expectAtRung(card[stat], TOP_RUNG, stat)
+    }
+  })
+
+  it('seeds every domain stat at the hard floor for an all-wrong try-out', () => {
+    const card = cardFor(session(() => false))
+    for (const stat of ['SHO', 'PAS', 'DRI', 'DEF', 'PHY'] as CardStat[]) {
+      expect(card[stat], stat).toBe(RATING_FLOOR)
+    }
+  })
+
+  it('holds the floor at 20 even though the ladder bottoms out at 5', () => {
+    const ratings = deriveRatings(session(() => false), T0 + 24 * MINUTE)
+    for (const r of ratings.values()) {
+      expect(r.rating, r.standardId).toBe(RATING_FLOOR)
+    }
+  })
+
+  it('opens at least forty points of overall between an all-correct and an all-wrong session', () => {
+    const strong = deriveOverall(cardFor(session(() => true)))
+    const weak = deriveOverall(cardFor(session(() => false)))
+    expect(strong - weak).toBeGreaterThanOrEqual(40)
+  })
+
+  // The acceptance test. Before this change the gap was five points.
+  it('opens at least forty points between DRI and SHO for a fractions-only session', () => {
+    const card = cardFor(session((track) => track === 'NF'))
+    expect(card.DRI - card.SHO).toBeGreaterThanOrEqual(40)
+    expectAtRung(card.DRI, TOP_RUNG)
+    expect(card.SHO).toBe(RATING_FLOOR)
+  })
+
+  it('separates every domain the child was actually separated on', () => {
+    const card = cardFor(session((track) => track === 'NF' || track === 'G'))
+    for (const strong of ['DRI', 'SHO'] as CardStat[]) {
+      for (const weak of ['PAS', 'DEF', 'PHY'] as CardStat[]) {
+        expect(card[strong] - card[weak], `${strong} vs ${weak}`).toBeGreaterThanOrEqual(40)
+      }
+    }
+  })
+
+  it('counts try-out questions as attempts, so the card shows them at all', () => {
+    const ratings = deriveRatings(session(() => true), T0 + 24 * MINUTE)
+    for (const id of RATED_STANDARD_IDS) {
+      expect(ratings.get(id)!.attempts, id).toBeGreaterThanOrEqual(1)
+      expect(ratings.get(id)!.lastSeenAt, id).not.toBeNull()
+    }
+  })
+
+  it('still applies normal Elo on top of the seed, from the seed and not from fifty', () => {
+    const tryout = session(() => true)
+    const seeded = deriveRatings(tryout, lastAt(tryout)).get('MT.4.NF.1')!
+    expectAtRung(seeded.rating, TOP_RUNG)
+    // Four NF standards share four NF questions, so this one was asked once.
+    expect(seeded.attempts).toBe(1)
+
+    const after = [
+      ...tryout,
+      attempt({
+        standardId: 'MT.4.NF.1',
+        at: lastAt(tryout) + MINUTE,
+        difficulty: 60,
+        correct: false,
+        context: 'match',
+      }),
+    ]
+    expect(ratingOf(after, 'MT.4.NF.1')).toBeCloseTo(
+      updateRating(TOP_RUNG, 60, false, K_MATCH / 2),
+      10,
+    )
+  })
+
+  it('leaves a domain the try-out never covered on the old rules', () => {
+    // A session that only ever asked about fractions — an aborted one.
+    const partial = Array.from({ length: 4 }, (_, i) =>
+      attempt({
+        id: `q${i}`,
+        at: T0 + i * MINUTE,
+        standardId: 'MT.4.NF.1',
+        difficulty: 45,
+        correct: true,
+        context: 'tryout',
+      }),
+    )
+    const ratings = deriveRatings(partial, lastAt(partial))
+    expectAtRung(ratings.get('MT.4.NF.1')!.rating, TOP_RUNG)
+    // Geometry and place value were never asked, so they keep the plain seed.
+    expect(ratings.get('MT.4.G.1')!.rating).toBe(SEED_RATING)
+    expect(ratings.get('MT.4.NBT.4')!.rating).toBe(SEED_RATING)
+  })
+
+  it('does not regress domain-average seeding in an untouched domain', () => {
+    const partial = Array.from({ length: 4 }, (_, i) =>
+      attempt({
+        id: `q${i}`,
+        at: T0 + i * MINUTE,
+        standardId: 'MT.4.NF.1',
+        difficulty: 45,
+        correct: true,
+        context: 'tryout',
+      }),
+    )
+    // NBT was never in the try-out, but he has since built history in NBT.5.
+    const nbt = Array.from({ length: 12 }, (_, i) =>
+      attempt({
+        standardId: 'MT.4.NBT.5',
+        at: lastAt(partial) + (i + 1) * MINUTE,
+        difficulty: 75,
+        correct: true,
+        context: 'match',
+      }),
+    )
+    const all = [...partial, ...nbt]
+    const ratings = deriveRatings(all, lastAt(all))
+    const known = ratings.get('MT.4.NBT.5')!.rating
+    expect(known).toBeGreaterThan(65)
+    // A newly taught NBT standard still seeds at the domain average, not at 50.
+    expect(ratings.get('MT.4.NBT.4')!.rating).toBeCloseTo(known, 10)
+  })
+
+  it('is unaffected by the order the session arrives in', () => {
+    const as = session((track) => track === 'NF')
+    const now = lastAt(as)
+    expect(plain(deriveRatings(shuffle(as), now))).toEqual(plain(deriveRatings(as, now)))
+  })
+
+  it('decays a try-out placement like any other rating', () => {
+    const as = session(() => true)
+    const fresh = ratingOf(as, 'MT.4.G.1')
+    expect(ratingOf(as, 'MT.4.G.1', lastAt(as) + 3 * WEEK_MS)).toBeCloseTo(
+      fresh - 3 * DECAY_PER_WEEK,
+      6,
+    )
   })
 })
 

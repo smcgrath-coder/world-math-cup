@@ -25,6 +25,8 @@ import type { CardStat, DomainCode } from '../curriculum/standards.generated'
 import { OPPONENTS } from '../data/opponents'
 import { K_MATCH, K_TRAINING, updateRating } from '../engine/elo'
 import { ALL_GENERATORS } from '../engine/items/generators'
+import { START_DIFFICULTY, nextDifficulty, trackFor } from '../engine/tryout'
+import type { TryoutTrack } from '../engine/tryout'
 import type { Attempt, AttemptContext, Card, Courage, StandardRating } from './types'
 
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1000
@@ -153,6 +155,34 @@ function decayed(raw: number, lastSeenAt: number, now: number): number {
   return floorRating(Math.max(Math.min(raw, DECAY_FLOOR), raw - loss))
 }
 
+/**
+ * Replay the try-out's per-domain ladders out of the log.
+ *
+ * The try-out is a *placement test*, and the ladder it runs — start at 45, +8
+ * for a right answer, −10 for a wrong one — already is an adaptive search. Its
+ * final rung is the measurement. Reconstructed here rather than stored, so the
+ * whole card still recomputes from history and nothing has to be migrated when
+ * the mathematics changes.
+ *
+ * It has to be replayed from the right/wrong flags rather than read off
+ * `attempt.difficulty`, because the screen records the difficulty the generator
+ * actually built at, and generators clamp to their own narrower bands. The rung
+ * that was asked for and the difficulty that came back are not the same number.
+ *
+ * `nextDifficulty` is imported rather than reimplemented from the step
+ * constants: a silent divergence between the ladder the screen runs and the
+ * ladder this replays would be close to impossible to spot from the card.
+ */
+function tryoutRungs(ordered: readonly Attempt[]): Map<TryoutTrack, number> {
+  const rungs = new Map<TryoutTrack, number>()
+  for (const a of ordered) {
+    if (a.context !== 'tryout') continue
+    const track = trackFor(a.standardId)
+    rungs.set(track, nextDifficulty(rungs.get(track) ?? START_DIFFICULTY, a.correct))
+  }
+  return rungs
+}
+
 /** Mean of the domain's already-rated standards, or `null` if it has no history. */
 function domainAverage(domain: DomainCode, rated: Map<string, number>): number | null {
   let sum = 0
@@ -169,13 +199,27 @@ function domainAverage(domain: DomainCode, rated: Map<string, number>): number |
 /**
  * Where a standard starts the first time it is seen.
  *
- * Once the player has history anywhere in the standard's domain, a newcomer
- * starts at that domain's average rather than at 50. The curriculum advances
- * during the school year: when his teacher introduces a new topic and it turns
- * up in the game, seeding it at 50 would drag his card down for the crime of
- * being taught something. Being taught something new must never lower his card.
+ * Three answers, in order of how much they know:
+ *
+ *  1. If the try-out covered this standard's track, the ladder's final rung —
+ *     that is a measurement, and it is the whole reason the try-out exists.
+ *     Floored at 20, because the ladder bottoms out at 5 and nothing may sit
+ *     below the floor.
+ *  2. Otherwise, once the player has history anywhere in the standard's domain,
+ *     that domain's current average. The curriculum advances during the school
+ *     year: when his teacher introduces a new topic and it turns up in the game,
+ *     seeding it at 50 would drag his card down for the crime of being taught
+ *     something. Being taught something new must never lower his card.
+ *  3. Otherwise 50, with nothing to go on.
  */
-function seedFor(standardId: string, rated: Map<string, number>): number {
+function seedFor(
+  standardId: string,
+  rated: Map<string, number>,
+  rungs: Map<TryoutTrack, number>,
+): number {
+  const rung = rungs.get(trackFor(standardId))
+  if (rung !== undefined) return floorRating(rung)
+
   const domain = STANDARDS_BY_ID[standardId]?.domain
   if (!domain) return SEED_RATING
   return domainAverage(domain, rated) ?? SEED_RATING
@@ -186,12 +230,18 @@ function seedFor(standardId: string, rated: Map<string, number>): number {
 /**
  * Fold the log into one rating per standard.
  *
+ * Two passes. The first replays the try-out's ladders, because a standard's
+ * starting rating depends on where its track finished and that is only known
+ * once the session has been read to the end. The second walks the log in time
+ * order and folds everything else through Elo from that start.
+ *
  * Standards that have never been attempted are still present, showing the
  * rating they *would* start at, so item selection has something to aim at
  * without a special case for a debut.
  */
 export function deriveRatings(attempts: Attempt[], now: number): Map<string, StandardRating> {
   const ordered = attempts.slice().sort(byTime)
+  const rungs = tryoutRungs(ordered)
 
   /** Running rating per standard. Only ever holds standards that were attempted. */
   const rated = new Map<string, number>()
@@ -202,18 +252,26 @@ export function deriveRatings(attempts: Attempt[], now: number): Map<string, Sta
     const id = a.standardId
     let rating = rated.get(id)
     if (rating === undefined) {
-      rating = seedFor(id, rated)
+      rating = seedFor(id, rated, rungs)
       rated.set(id, rating)
     }
 
     const seen = counts.get(id) ?? 0
+    // Try-out questions are still questions he answered: they count as evidence
+    // and they set `lastSeenAt`, so the card shows the placement and the
+    // placement decays like anything else.
+    counts.set(id, seen + 1)
+    lastSeen.set(id, a.at)
+
+    // But they do not fold through Elo. The ladder already placed this track,
+    // and running the same evidence through a second, much slower search only
+    // damps it back towards 50 — which is exactly the bug this avoids.
+    if (a.context === 'tryout') continue
+
     // Half K while provisional, for the same reason as domain seeding: not
     // enough evidence yet to move the card hard in either direction.
     const k = kFor(a.context) * (seen < PROVISIONAL_ATTEMPTS ? 0.5 : 1)
-
     rated.set(id, stepped(rating, a.difficulty, a.correct, k))
-    counts.set(id, seen + 1)
-    lastSeen.set(id, a.at)
   }
 
   const out = new Map<string, StandardRating>()
@@ -224,7 +282,7 @@ export function deriveRatings(attempts: Attempt[], now: number): Map<string, Sta
         standardId: id,
         // The seed a debut would get, computed against the final ratings. No
         // decay: a standard never attempted has no last-seen time to decay from.
-        rating: seedFor(id, rated),
+        rating: seedFor(id, rated, rungs),
         attempts: 0,
         lastSeenAt: null,
         provisional: true,
