@@ -4,9 +4,12 @@ import { CountryCreator } from './screens/CountryCreator'
 import { CoachExplainer } from './screens/CoachExplainer'
 import { Tryout } from './screens/Tryout'
 import { TrainingGround } from './screens/TrainingGround'
+import { Match } from './screens/Match'
 import { PlayerCard } from './components/PlayerCard'
 import { deriveRatings, deriveCard } from './store/derive'
 import { OPPONENTS_BY_ID } from './data/opponents'
+import type { Opponent } from './data/opponents'
+import type { Stakes } from './engine/match'
 
 /**
  * Temporary root. The real shell — tabs, training, match — arrives in Task 21.
@@ -35,18 +38,36 @@ function App() {
   const [explained, setExplained] = useState(settings.coachExplainerSeen)
   const [scouted, setScouted] = useState(() => attempts.some((a) => a.context === 'tryout'))
   const [training, setTraining] = useState(false)
+  const [fixture, setFixture] = useState<{ opponent: Opponent; stakes: Stakes; at: number } | null>(
+    null,
+  )
 
   if (!country) return <CountryCreator />
   if (!explained) return <CoachExplainer onDone={() => setExplained(true)} />
   if (!scouted) return <Tryout onDone={() => setScouted(true)} />
   if (training) return <TrainingGround onDone={() => setTraining(false)} />
+  if (fixture) {
+    return (
+      <Match
+        // A fresh match per fixture, and — this is the important half — the
+        // *same* match for the whole of one. A match writes to the log as it
+        // goes, so anything derived from the log in here (the attempt count was
+        // the first attempt at this) changes mid-match, remounts the screen and
+        // silently starts a second match over the top of the first.
+        key={`${fixture.opponent.id}:${fixture.stakes}:${fixture.at}`}
+        opponent={fixture.opponent}
+        stakes={fixture.stakes}
+        onDone={() => setFixture(null)}
+      />
+    )
+  }
 
   const now = Date.now()
   const ratings = deriveRatings(attempts, now)
   const card = deriveCard(ratings, attempts, now)
 
   return (
-    <div className="flex min-h-full flex-col items-center gap-8 bg-pitch-dark p-6">
+    <div className="flex min-h-full flex-col items-center gap-6 bg-pitch-dark p-6 text-white">
       <PlayerCard country={country} card={card} ratings={ratings} />
       <button
         type="button"
@@ -55,7 +76,84 @@ function App() {
       >
         Training Ground
       </button>
-      <PlayerCard opponent={OPPONENTS_BY_ID.brazil!} />
+      <Fixtures onPlay={(opponent, stakes) => setFixture({ opponent, stakes, at: Date.now() })} />
+    </div>
+  )
+}
+
+/**
+ * A stand-in for the fixture list.
+ *
+ * Eight sides spanning the roster, so both ends of every dial can be played
+ * before Task 21 builds the real thing: Brazil at 94 in a knockout is the
+ * hardest the game gets, Curaçao at 56 in a friendly is the gentlest.
+ */
+const SHORTLIST = [
+  'brazil',
+  'argentina',
+  'england',
+  'japan',
+  'panama',
+  'iraq',
+  'haiti',
+  'curacao',
+] as const
+
+function Fixtures({ onPlay }: { onPlay: (opponent: Opponent, stakes: Stakes) => void }) {
+  const [stakes, setStakes] = useState<Stakes>('friendly')
+
+  return (
+    <div className="w-full max-w-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">Next match</p>
+        <div className="flex gap-1.5">
+          {(['friendly', 'knockout'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setStakes(option)}
+              className={
+                stakes === option
+                  ? 'rounded-full bg-gold px-3 py-1 text-xs font-black text-ink'
+                  : 'rounded-full px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/20'
+              }
+            >
+              {option === 'friendly' ? 'Friendly' : 'Knockout'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ul className="mt-3 flex flex-col gap-2">
+        {SHORTLIST.map((id) => {
+          const opponent = OPPONENTS_BY_ID[id]
+          if (opponent === undefined) return null
+          return (
+            <li key={id}>
+              <button
+                type="button"
+                onClick={() => onPlay(opponent, stakes)}
+                className="flex w-full items-center gap-3 rounded-2xl bg-black/25 px-4 py-3 text-left ring-1 ring-white/10 active:bg-black/40"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-6 w-6 shrink-0 rounded-full ring-2"
+                  style={{ backgroundColor: opponent.kit[0], borderColor: opponent.kit[1] }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-bold">{opponent.name}</span>
+                  <span className="block text-xs text-white/55">
+                    {'★'.repeat(opponent.stars)}
+                    {opponent.stars > 0 ? ' · ' : ''}
+                    tier {opponent.tier}
+                  </span>
+                </span>
+                <span className="text-xl font-black">{opponent.rating}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
