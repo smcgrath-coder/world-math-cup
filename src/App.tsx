@@ -3,6 +3,7 @@ import { useAttempts, useCountry, useSettings } from './store/useGameState'
 import { CountryCreator } from './screens/CountryCreator'
 import { CoachExplainer } from './screens/CoachExplainer'
 import { Tryout } from './screens/Tryout'
+import { TrainingGround } from './screens/TrainingGround'
 import { PlayerCard } from './components/PlayerCard'
 import { deriveRatings, deriveCard } from './store/derive'
 import { OPPONENTS_BY_ID } from './data/opponents'
@@ -33,10 +34,12 @@ function App() {
    */
   const [explained, setExplained] = useState(settings.coachExplainerSeen)
   const [scouted, setScouted] = useState(() => attempts.some((a) => a.context === 'tryout'))
+  const [training, setTraining] = useState(false)
 
   if (!country) return <CountryCreator />
   if (!explained) return <CoachExplainer onDone={() => setExplained(true)} />
   if (!scouted) return <Tryout onDone={() => setScouted(true)} />
+  if (training) return <TrainingGround onDone={() => setTraining(false)} />
 
   const now = Date.now()
   const ratings = deriveRatings(attempts, now)
@@ -45,6 +48,13 @@ function App() {
   return (
     <div className="flex min-h-full flex-col items-center gap-8 bg-pitch-dark p-6">
       <PlayerCard country={country} card={card} ratings={ratings} />
+      <button
+        type="button"
+        onClick={() => setTraining(true)}
+        className="w-full max-w-sm rounded-2xl bg-gold px-6 py-4 text-lg font-bold text-pitch-dark"
+      >
+        Training Ground
+      </button>
       <PlayerCard opponent={OPPONENTS_BY_ID.brazil!} />
     </div>
   )
