@@ -525,6 +525,13 @@ pass once the game is playable end to end.
 - **`MT.4.OA.4`'s multiple framing is wordy**: "Is 210 a multiple of 3? Give the
   remainder when 210 is divided by 3 — a remainder of 0 means yes." That is a
   lot of reading before any thinking starts.
+- **The fiction and the arithmetic drift apart at the bottom of the scale.** For
+  a weak player, "the hardest thing on the pitch" — the bicycle kick, which
+  targets 0.38 success at *his* rating — generated `2 × 1`. `select.ts` is
+  behaving exactly as specified; the problem is that the label promises
+  spectacle and the question delivers a times-table fact. Either the shot copy
+  should soften when the drawn difficulty is very low, or the bicycle band
+  should have an absolute floor as well as a relative one.
 
 ## Open items
 
