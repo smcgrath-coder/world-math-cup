@@ -5,6 +5,8 @@ import { CoachExplainer } from './screens/CoachExplainer'
 import { Tryout } from './screens/Tryout'
 import { TrainingGround } from './screens/TrainingGround'
 import { Match } from './screens/Match'
+import type { MatchResult } from './screens/Match'
+import { PostMatch } from './screens/PostMatch'
 import { PlayerCard } from './components/PlayerCard'
 import { deriveRatings, deriveCard } from './store/derive'
 import { OPPONENTS_BY_ID } from './data/opponents'
@@ -41,11 +43,24 @@ function App() {
   const [fixture, setFixture] = useState<{ opponent: Opponent; stakes: Stakes; at: number } | null>(
     null,
   )
+  /** The match just played, waiting to be written up. Survives the match unmounting. */
+  const [result, setResult] = useState<MatchResult | null>(null)
 
   if (!country) return <CountryCreator />
   if (!explained) return <CoachExplainer onDone={() => setExplained(true)} />
   if (!scouted) return <Tryout onDone={() => setScouted(true)} />
   if (training) return <TrainingGround onDone={() => setTraining(false)} />
+  if (result) {
+    return (
+      <PostMatch
+        matchId={result.matchId}
+        opponent={result.opponent}
+        score={result.score}
+        questions={result.questions}
+        onDone={() => setResult(null)}
+      />
+    )
+  }
   if (fixture) {
     return (
       <Match
@@ -57,7 +72,10 @@ function App() {
         key={`${fixture.opponent.id}:${fixture.stakes}:${fixture.at}`}
         opponent={fixture.opponent}
         stakes={fixture.stakes}
-        onDone={() => setFixture(null)}
+        onDone={(played) => {
+          setResult(played)
+          setFixture(null)
+        }}
       />
     )
   }

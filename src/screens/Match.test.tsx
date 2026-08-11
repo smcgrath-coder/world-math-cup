@@ -8,6 +8,7 @@ import {
   matchDeps,
   scoutReport,
 } from './Match'
+import type { MatchResult } from './Match'
 import { OPPONENTS_BY_ID } from '../data/opponents'
 import type { Opponent } from '../data/opponents'
 import { QUESTIONS_PER_MATCH, reduce, startMatch } from '../engine/match'
@@ -484,6 +485,47 @@ describe('Match', () => {
 
     expect(said()).toMatch(new RegExp(`${o.state.score[0]}–${o.state.score[1]}`))
     expect(screen.getByRole('button', { name: /off the pitch/i })).toBeInTheDocument()
+  })
+
+  it('leaves the write-up to the dressing room', () => {
+    const o = play()
+    playOut(o, () => ALWAYS_WRONG)
+
+    // The whistle, the scoreline, and a way off the pitch. The verdict, the
+    // stats that moved and the bravery count all belong to the next screen, and
+    // saying half of them here would mean saying them twice.
+    expect(said()).toMatch(/full time/i)
+    expect(said()).not.toMatch(/took that one|edged it|that’s the win|point each/i)
+    expect(said()).not.toMatch(/hard ball|on your record|what moved/i)
+  })
+
+  it('hands the whistle a scoreline and every question it asked', () => {
+    const handed = vi.fn()
+    const opponent = CURACAO
+    render(<Match opponent={opponent} stakes="friendly" seed={SEED} matchId="m1" onDone={handed} />)
+    const o = open(opponent, 'friendly', 'm1')
+
+    playOut(o, (s) => (s.state.questionsAsked % 3 === 0 ? ALWAYS_WRONG : s.state.currentItem!.answer.canonical))
+    press(/off the pitch/i)
+
+    expect(handed).toHaveBeenCalledTimes(1)
+    const result = handed.mock.calls[0]![0] as MatchResult
+    expect(result.matchId).toBe('m1')
+    expect(result.opponent).toBe(opponent)
+    expect(result.score).toEqual(o.state.score)
+
+    // The score is the one fact about a match that is not in the log; the
+    // questions are the other. Both are keyed to the ids the *store* minted, so
+    // the film room can join them to the log it reads back by matchId.
+    const saved = getStore().getState().attempts
+    expect(saved).toHaveLength(QUESTIONS_PER_MATCH)
+    expect(result.questions.size).toBe(QUESTIONS_PER_MATCH)
+    for (const attempt of saved) {
+      const item = result.questions.get(attempt.id)
+      expect(item?.standardId).toBe(attempt.standardId)
+      expect(item?.params).toEqual(attempt.params)
+      expect(item?.difficulty).toBe(attempt.difficulty)
+    }
   })
 })
 

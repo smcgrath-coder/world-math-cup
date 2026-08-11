@@ -321,6 +321,29 @@ function toDraft(attempt: Attempt): AttemptDraft {
   return draft
 }
 
+/**
+ * What the match hands to the dressing room.
+ *
+ * The scoreline, because it is the one fact about a match that is not in the
+ * attempts log and cannot be recovered from it, and the questions, because they
+ * cannot be recovered either: a generator turns a difficulty and a random stream
+ * into an item, and there is no way back from the parameters it recorded to the
+ * item they came from. They are keyed by the id the *store* minted, so the film
+ * room can join them to the log it reads back rather than trusting a position in
+ * an array.
+ *
+ * Everything else — the ratings, the courage counts, what beat him three weeks
+ * ago — is derived from the log by `matchId`, because this screen has already
+ * unmounted by the time any of it is drawn.
+ */
+export interface MatchResult {
+  matchId: string
+  opponent: Opponent
+  /** `[us, them]` at the whistle. */
+  score: [number, number]
+  questions: ReadonlyMap<string, Item>
+}
+
 export interface MatchProps {
   opponent: Opponent
   /** Defaults to a friendly, which is the gentlest thing a match can be. */
@@ -328,7 +351,7 @@ export interface MatchProps {
   /** Defaults to the clock, so two matches never ask the same fourteen. */
   seed?: number
   matchId?: string
-  onDone?: () => void
+  onDone?: (result: MatchResult) => void
 }
 
 export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: MatchProps) {
@@ -355,6 +378,10 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
   /** How much of the log is already on disk. */
   const written = useRef(0)
   const logRef = useRef<readonly Attempt[]>([])
+  /** The question that was on screen for each entry in the log, by log index. */
+  const askedItems = useRef<Item[]>([])
+  /** The same questions, once the store has minted an id for each attempt. */
+  const questions = useRef(new Map<string, Item>())
 
   const state = session.state
   useEffect(() => {
@@ -366,7 +393,7 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
       for (const timer of timers.current) clearTimeout(timer)
       timers.current = []
       // A match abandoned at 2–1 still happened. Never lose maths he has done.
-      flushTail(logRef.current, written)
+      flushTail(logRef.current, written, askedItems, questions)
     },
     [],
   )
@@ -378,7 +405,7 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
   // ordinary tab switch.
   useEffect(() => {
     const onHide = (): void => {
-      if (document.visibilityState === 'hidden') flushTail(logRef.current, written)
+      if (document.visibilityState === 'hidden') flushTail(logRef.current, written, askedItems, questions)
     }
     document.addEventListener('visibilitychange', onHide)
     return () => document.removeEventListener('visibilitychange', onHide)
@@ -398,6 +425,14 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
     setUnreadable(false)
     setSession({ deps: session.deps, state: after })
 
+    // Keep the question beside the answer it produced. The generators turn a
+    // difficulty and a random stream into an item and there is no way back from
+    // the parameters the log records to the item they came from, so if this is
+    // not held here the film room can never show him the question he was asked.
+    if (after.log.length > before.log.length && before.currentItem !== null) {
+      askedItems.current.push(before.currentItem)
+    }
+
     const next = beatFor(before, after)
     if (next !== null) {
       // The beat holds the question that was *being asked*, so it can dim in
@@ -415,7 +450,7 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
     }
 
     if (after.phase === 'fulltime' || after.log.length - written.current >= FLUSH_EVERY) {
-      flushTail(after.log, written)
+      flushTail(after.log, written, askedItems, questions)
     }
   }
 
@@ -508,7 +543,18 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
           )}
 
           {beat === null && state.phase === 'fulltime' && (
-            <FullTime state={state} ourName={ourName} onDone={onDone} />
+            <FullTime
+              state={state}
+              ourName={ourName}
+              onDone={() =>
+                onDone?.({
+                  matchId: state.id,
+                  opponent,
+                  score: [state.score[0], state.score[1]],
+                  questions: questions.current,
+                })
+              }
+            />
           )}
 
           {beat === null && state.phase === 'tackleback' && (
@@ -562,12 +608,33 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
   )
 }
 
-/** Write whatever is not on disk yet, and nothing twice. */
-function flushTail(log: readonly Attempt[], written: { current: number }): void {
+/**
+ * Write whatever is not on disk yet, and nothing twice.
+ *
+ * Also joins each written attempt to the question it came from, using the id the
+ * store hands back rather than a position in an array — the film room reads the
+ * log by `matchId` and needs a key that means the same thing on both sides. If
+ * the store refused any draft the ids no longer line up one for one, and the
+ * join is abandoned rather than guessed at: a film room with a gap in it is
+ * recoverable, a film room showing the wrong question next to his answer is not.
+ */
+function flushTail(
+  log: readonly Attempt[],
+  written: { current: number },
+  asked: { current: Item[] },
+  questions: { current: Map<string, Item> },
+): void {
   if (log.length <= written.current) return
-  const tail = log.slice(written.current)
+  const from = written.current
+  const tail = log.slice(from)
   written.current = log.length
-  getStore().appendAttempts(tail.map(toDraft))
+
+  const added = getStore().appendAttempts(tail.map(toDraft))
+  if (added.length !== tail.length) return
+  added.forEach((attempt, i) => {
+    const item = asked.current[from + i]
+    if (item !== undefined) questions.current.set(attempt.id, item)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -726,12 +793,13 @@ function Halftime({
 // ---------------------------------------------------------------------------
 
 /**
- * The whistle.
+ * The whistle, and nothing else.
  *
- * The scoreline, one honest line about it, and the bravery count — which is the
- * only number here that is *his* rather than the match's, and the reason it is
- * on the screen at all. The full post-match card, stat deltas and the film room
- * belong to Task 20; this is the whistle, not the write-up.
+ * The scoreline and a way off the pitch. What the match *meant* — the verdict,
+ * the stats that moved, the bravery count, the ball he put away today that beat
+ * him three weeks ago — belongs to the dressing room, and saying half of it
+ * here would mean saying it twice or saying it worse. The one job left to this
+ * card is to be the sound of the final whistle.
  */
 function FullTime({
   state,
@@ -740,22 +808,9 @@ function FullTime({
 }: {
   state: MatchState
   ourName: string
-  onDone?: () => void
+  onDone: () => void
 }) {
   const [us, them] = state.score
-  // "Edged it" is only said when they actually edged it. A child beaten 4–0 and
-  // told it was close knows it was not, and then none of the rest of what this
-  // game tells him about himself is worth anything either.
-  const verdict =
-    us > them
-      ? `That’s the win. ${state.opponent.name} beaten.`
-      : us === them
-        ? 'A point each, and they knew they’d been in a game.'
-        : them - us === 1
-          ? `${state.opponent.name} edged it — and you made them work for every bit of it.`
-          : `${state.opponent.name} took that one. You were still going at them at the end.`
-
-  const hard = state.courage.hardShotsAttempted
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -764,18 +819,7 @@ function FullTime({
         <p className="mt-1 text-3xl leading-tight font-black">
           {ourName} {us}–{them} {state.opponent.name}
         </p>
-        <p className="mt-2 text-[15px] leading-relaxed text-white/75">{verdict}</p>
       </div>
-
-      {hard > 0 && (
-        <div className="rounded-2xl bg-gold/12 p-4 ring-1 ring-gold/30">
-          <p className="text-[15px] leading-relaxed font-bold text-gold">
-            {hard === 1
-              ? 'You took on the hard ball once out there. That’s the bit that counts.'
-              : `You took on the hard ball ${hard} times out there. That’s the bit that counts.`}
-          </p>
-        </div>
-      )}
 
       <motion.button
         type="button"
