@@ -13,8 +13,33 @@ describe('classifyMiss', () => {
       expect(classifyMiss('7', spec('42')).kind).toBe('off')
     })
 
-    it('calls 3 a near miss when the answer is 2, despite 50% relative error', () => {
-      expect(classifyMiss('3', spec('2')).kind).toBe('near')
+    it('calls 3 off target when the answer is 2, because that is not a slip', () => {
+      // Reversed deliberately after Rion played it and said the saves felt
+      // early. On a small count -- how many right angles, how many factor pairs
+      // -- being one out is not a shot the keeper tipped over, it is not knowing
+      // the answer. Treating it as a near miss also sent the tackle-back to
+      // repair arithmetic when the concept was what needed help.
+      expect(classifyMiss('3', spec('2')).kind).toBe('off')
+    })
+
+    it('still calls one or two out a slip once the answer is big enough', () => {
+      expect(classifyMiss('43', spec('42')).kind).toBe('near')
+      expect(classifyMiss('16829', spec('16831')).kind).toBe('near')
+    })
+
+    it('no longer saves a shot that was nowhere near a four-digit answer', () => {
+      // Ten percent of 16831 is plus or minus 1683. This used to be a save.
+      expect(classifyMiss('15000', spec('16831')).kind).toBe('off')
+      expect(classifyMiss('605', spec('672')).kind).toBe('off')
+    })
+
+    it('recognises two transposed digits as the slip it is', () => {
+      // Nowhere near by any distance measure, and the commonest mistake in
+      // multi-digit work.
+      expect(classifyMiss('627', spec('672')).kind).toBe('near')
+      expect(classifyMiss('16813', spec('16831')).kind).toBe('near')
+      // Not a transposition: two digits changed, not swapped.
+      expect(classifyMiss('611', spec('672')).kind).toBe('off')
     })
 
     it('calls a wildly large answer off target', () => {
@@ -95,7 +120,7 @@ describe('classifyMiss', () => {
     it('leaves every near miss still wrong', () => {
       for (const [given, canonical] of [
         ['43', '42'],
-        ['3', '2'],
+        ['627', '672'],
         ['6/8', '7/8'],
         ['0.75', '7/8'],
       ] as const) {

@@ -78,14 +78,23 @@ const answer = (s: MatchState, given: string, deps: MatchDeps, latencyMs = 1200)
 const right = (item: Item) => item.answer.canonical
 
 /**
- * Five percent out — an arithmetic slip on a sound method, so `classifyMiss`
- * reads it as `near`. Written as a fraction so it works for whole numbers and
- * fractions alike.
+ * A slip on a sound method, so `classifyMiss` reads it as `near`.
+ *
+ * This used to be "five percent out", which worked while a near miss was
+ * defined by relative error. It no longer is: a slip is now a digit event, so
+ * five percent of a four-digit answer is a different method, not a slip. Off by
+ * one is the honest version for a whole number of ten or more; one unit
+ * fraction out is the honest version for a fraction.
+ *
+ * A small whole number has no near miss at all — being one out on "how many
+ * right angles" is not knowing, and that is the point of the change — so those
+ * get a one-twentieth gap, which the fraction rule still reads as a slip.
  */
 function nearMiss(item: Item): string {
   const r = Rational.parse(item.answer.canonical)!
+  if (r.isInteger() && Math.abs(r.n) >= 10) return String(r.n + 1)
   if (r.n === 0) return '1/20'
-  return `${21 * r.n}/${20 * r.d}`
+  return `${20 * r.n + r.d}/${20 * r.d}`
 }
 
 /**

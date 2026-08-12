@@ -7,6 +7,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     globals: true,
+    // Only `src` is a test root. `docs` holds prose, plus work-in-progress
+    // tests parked there deliberately for code that does not exist yet.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
     // The generator soundness sweeps are property tests over tens of thousands
     // of items each, and they are meant to be. They run for a few seconds
     // apiece, which trips the 5s default. The whole suite still finishes in

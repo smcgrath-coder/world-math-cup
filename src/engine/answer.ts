@@ -199,8 +199,17 @@ export interface MissClassification {
   relativeError?: number
 }
 
-/** Within a tenth of the true value counts as on target. */
-const NEAR_RELATIVE = 0.1
+/**
+ * Below this, being one out is a counting or concept error rather than a slip.
+ *
+ * Answering 3 right angles for a square is not a shot the keeper tipped over;
+ * it is not knowing that a square has four. Above it, off-by-one on a
+ * multi-digit answer really is a slip.
+ */
+const SLIP_FLOOR = 10
+
+/** The biggest absolute gap that still reads as a slip rather than a method. */
+const SLIP_GAP = 2
 
 /**
  * Classify a wrong answer. Behaviour is undefined for a *correct* answer — call
@@ -243,12 +252,35 @@ function distance(given: Rational, correct: Rational): { relativeError: number }
 /** A gap of 1/4 or finer counts as one piece out. */
 const NEAREST_PIECE = 4
 
-function isNear(given: Rational, correct: Rational, relativeError: number): boolean {
-  if (relativeError <= NEAR_RELATIVE) return true
-
-  // Off by one whole, on small integers. 3 when the answer is 2 is plainly a
-  // near miss, but relative error calls it 50% and would file it as off target.
-  if (given.isInteger() && correct.isInteger() && Math.abs(given.n - correct.n) === 1) return true
+/**
+ * Was this a slip, or a different method?
+ *
+ * A slip is a *digit* event, not a proportion. This used to accept anything
+ * within 10% of the true value, which sounds reasonable and is not: ten percent
+ * of 16831 is ±1683, so answering 15000 to a four-digit sum was being narrated
+ * as a shot the keeper tipped over. Measured across the generators, 100% of
+ * near-miss answers on multi-digit multiplication were being saved, and 97% on
+ * multi-digit addition. Rion noticed — he said the saves felt early — and he was
+ * right.
+ *
+ * Three things count as a slip now:
+ *
+ *  - off by one or two on an answer of ten or more (`43` for `42`, which was the
+ *    case that prompted this whole classification in the first place)
+ *  - two adjacent digits transposed (`627` for `672`) — the classic
+ *  - one unit fraction out, at quarters or finer (`3/4` for `7/8`)
+ *
+ * Everything else is a shot that never troubled the goal, which is not an
+ * insult: it routes the tackle-back toward the concept instead of the
+ * arithmetic, which is the help that answer actually needs.
+ */
+function isNear(given: Rational, correct: Rational, _relativeError: number): boolean {
+  if (given.isInteger() && correct.isInteger()) {
+    const gapSize = Math.abs(given.n - correct.n)
+    if (Math.abs(correct.n) >= SLIP_FLOOR && gapSize <= SLIP_GAP) return true
+    if (isTransposition(given.n, correct.n)) return true
+    return false
+  }
 
   // One piece out.
   //
@@ -260,4 +292,27 @@ function isNear(given: Rational, correct: Rational, relativeError: number): bool
   // whatever the reduced forms look like.
   const gap = given.sub(correct)
   return Math.abs(gap.n) === 1 && gap.d >= NEAREST_PIECE
+}
+
+/**
+ * Two adjacent digits swapped — `627` for `672`.
+ *
+ * Worth naming on its own because it is the commonest slip in multi-digit work
+ * and it is nowhere near the true value, so no distance rule will ever catch it.
+ */
+function isTransposition(given: number, correct: number): boolean {
+  const a = String(Math.abs(given))
+  const b = String(Math.abs(correct))
+  if (a.length !== b.length || a === b) return false
+  if (Math.sign(given) !== Math.sign(correct)) return false
+
+  const differing: number[] = []
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) differing.push(i)
+    if (differing.length > 2) return false
+  }
+  if (differing.length !== 2) return false
+
+  const [i, j] = differing as [number, number]
+  return j === i + 1 && a[i] === b[j] && a[j] === b[i]
 }
