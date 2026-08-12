@@ -2,19 +2,110 @@ import { describe, expect, it } from 'vitest'
 import { Rational as R } from '../../rational'
 import { makeRng } from '../rng'
 import { assertGeneratorSound } from '../harness'
-import { mt4nf1 } from './mt4nf1'
+import {
+  HOW_MANY_PIECES,
+  MISSING_DENOMINATOR,
+  MISSING_NUMERATOR,
+  NAMES,
+  PIECE_NAMES,
+  SCALE_FACTOR,
+  THINGS,
+  WHICH_SAME,
+  WORD_SAME_CUT,
+  mt4nf1,
+} from './mt4nf1'
 
 /**
- * Independent of the generator: the standard says a/b is equivalent to
- * (n × a)/(n × b). So the number sitting over `targetDen` is whatever a/b scales
- * to at that bottom number — a × targetDen ÷ b.
+ * Independent of the generator, one route per format.
  *
- * This deliberately never touches `mult`, which is the number the generator
- * actually multiplied by. It recovers the scaling from the two denominators
- * instead, so a generator that drew one multiplier and used another would be
+ * The standard says a/b is equivalent to (n × a)/(n × b), and every format here
+ * is a different hole punched in that sentence. Each recomputation below works
+ * from the numbers the prompt actually *shows* and asks what the missing one has
+ * to be for the two fractions to be equal — never from `mult`, which is the
+ * number the generator multiplied by. A generator that drew one multiplier and
+ * used another, or that printed a numerator its own key disagrees with, is
  * caught rather than agreed with.
  */
-const answerFrom = (p: Record<string, number>) => new R(p.a! * p.targetDen!, p.b!).toString()
+const answerFrom = (p: Record<string, number>) => {
+  const { a, b, targetDen, scaledNum } = p as {
+    a: number
+    b: number
+    targetDen: number
+    scaledNum?: number
+  }
+  switch (p.format) {
+    // Shown a/b and the new bottom number. a/b = x/targetDen, so x = a × targetDen ÷ b.
+    case MISSING_NUMERATOR:
+    case WORD_SAME_CUT:
+      return new R(a * targetDen, b).toString()
+    // Shown a/b and the new top number. a/b = scaledNum/x, so x = scaledNum × b ÷ a.
+    case MISSING_DENOMINATOR:
+      return new R(scaledNum! * b, a).toString()
+    // Both fractions shown. The factor took a to scaledNum, so it is scaledNum ÷ a.
+    case SCALE_FACTOR:
+      return new R(scaledNum!, a).toString()
+    // How many b-ths is scaledNum/targetDen? x/b = scaledNum/targetDen.
+    case HOW_MANY_PIECES:
+      return new R(scaledNum! * b, targetDen).toString()
+    // The option equal to the fraction on offer, which is that fraction in
+    // lowest terms. Reached without touching a or b at all.
+    case WHICH_SAME:
+      return new R(scaledNum!, targetDen).toString()
+    default:
+      throw new Error(`unknown format ${p.format}`)
+  }
+}
+
+/** The three options of a `WHICH_SAME` item, in the order it prints them. */
+function optionsOf(p: Record<string, number>): string[] {
+  const correct = `${p.a}/${p.b}`
+  const others = [`${p.a}/${p.targetDen}`, `${p.scaledNum}/${p.b}`]
+  const out = [...others]
+  out.splice(p.slot!, 0, correct)
+  return out
+}
+
+/**
+ * The prompt rebuilt from params, character for character.
+ *
+ * This shares the *words* with the generator and never its arithmetic, which is
+ * the same trade `MT.4.MD.3` makes. It is doing more work here than on a
+ * single-format generator: with six shapes in play it is what stops a format
+ * from printing one question and marking another.
+ */
+const rebuildPrompt = (p: Record<string, number>) => {
+  const { a, b, targetDen, scaledNum } = p
+  switch (p.format) {
+    case MISSING_NUMERATOR:
+      return `${a}/${b} = ?/${targetDen}. What is the missing top number?`
+    case MISSING_DENOMINATOR:
+      return `${a}/${b} = ${scaledNum}/?. What is the missing bottom number?`
+    case SCALE_FACTOR:
+      return (
+        `${a}/${b} = ${scaledNum}/${targetDen}. The top and the bottom were both ` +
+        `multiplied by the same number. What number was it?`
+      )
+    case HOW_MANY_PIECES:
+      return `${scaledNum}/${targetDen} is the same amount as how many ${PIECE_NAMES[b!]![1]}?`
+    case WHICH_SAME: {
+      const [one, two, three] = optionsOf(p)
+      return `Which of these is the same amount as ${scaledNum}/${targetDen}: ${one}, ${two}, or ${three}?`
+    }
+    case WORD_SAME_CUT: {
+      const first = NAMES[p.nameA!]
+      const second = NAMES[p.nameB!]
+      const { thing, pieces } = THINGS[p.thing!]!
+      return (
+        `${first} cut a ${thing} into ${b} equal ${pieces} and took ${a} of them. ` +
+        `${second} cut an identical ${thing} into ${targetDen} equal ${pieces}. ` +
+        `How many of the smaller ${pieces} does ${second} need to take to have the ` +
+        `same amount as ${first}?`
+      )
+    }
+    default:
+      throw new Error(`unknown format ${p.format}`)
+  }
+}
 
 /** Mean of a param over many seeds, so a difficulty claim is not one lucky draw. */
 function meanParam(difficulty: number, key: string): number {
@@ -27,12 +118,31 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b)
 }
 
+const EASIEST = 5
+const HARDEST = 70
+
+function itemsAt(difficulty: number, seeds = 100) {
+  return Array.from({ length: seeds }, (_, s) => mt4nf1.generate(difficulty, makeRng(s)))
+}
+
+/** Every item across the whole range, which is what a season of play looks like. */
+function everyItem() {
+  const out = []
+  for (let d = EASIEST; d <= HARDEST; d += 1) out.push(...itemsAt(d, 40))
+  return out
+}
+
+/** A prompt with every number masked out — the measure of how repetitive it feels. */
+const shape = (s: string) => s.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim()
+
 describe('MT.4.NF.1 equivalent fractions', () => {
   it('is sound across its full range', () => {
-    assertGeneratorSound(mt4nf1, answerFrom, {
-      promptParams: ['a', 'b', 'targetDen'],
-      rebuildPrompt: (p) => `${p.a}/${p.b} = ?/${p.targetDen}. What is the missing top number?`,
-    })
+    // `promptParams` is deliberately not used: no single param appears as a
+    // digit in all six formats — `targetDen` is the answer in one of them and
+    // `b` is spelled as a word in another — so a list of keys would either be
+    // empty or wrong. `rebuildPrompt` is the strong form of the same check and
+    // covers every format.
+    assertGeneratorSound(mt4nf1, answerFrom, { rebuildPrompt })
   })
 
   it('scales up the multiplier and the starting denominator with difficulty', () => {
@@ -43,53 +153,193 @@ describe('MT.4.NF.1 equivalent fractions', () => {
   it('always starts from a proper fraction in lowest terms', () => {
     // An unreduced start (2/4 = ?/12) muddies what is being asked: he could get
     // there by reducing rather than by scaling, which is a different standard.
-    for (let d = 5; d <= 70; d += 5) {
-      for (let s = 0; s < 40; s++) {
-        const { a, b } = mt4nf1.generate(d, makeRng(s)).params as Record<string, number>
-        expect(a, `a out of range at d=${d} s=${s}`).toBeGreaterThanOrEqual(1)
-        expect(a, `not proper at d=${d} s=${s}`).toBeLessThan(b!)
-        expect(gcd(a!, b!), `${a}/${b} is not in lowest terms`).toBe(1)
+    for (const item of everyItem()) {
+      const { a, b } = item.params as Record<string, number>
+      expect(a, `a out of range on ${item.prompt}`).toBeGreaterThanOrEqual(1)
+      expect(a, `not proper on ${item.prompt}`).toBeLessThan(b!)
+      expect(gcd(a!, b!), `${a}/${b} is not in lowest terms`).toBe(1)
+    }
+  })
+
+  it('always relates two fractions that really are equal', () => {
+    // Every format shows or implies both fractions. If `scaledNum/targetDen`
+    // were not the same amount as `a/b`, the question would have no right
+    // answer at all — whichever number it asked for.
+    for (const item of everyItem()) {
+      const { a, b, targetDen, mult } = item.params as Record<string, number>
+      expect(mult, `multiplier of 1 is not a question on ${item.prompt}`).toBeGreaterThanOrEqual(2)
+      expect(targetDen).toBe(b! * mult!)
+      const scaled = item.params.scaledNum
+      if (scaled !== undefined) {
+        // Cross products, so this never divides and never rounds.
+        expect(a! * targetDen!, item.prompt).toBe(scaled * b!)
       }
     }
   })
 
-  it('always asks for a bigger denominator that is a whole multiple of the first', () => {
-    for (let d = 5; d <= 70; d += 5) {
-      for (let s = 0; s < 40; s++) {
-        const { b, targetDen, mult } = mt4nf1.generate(d, makeRng(s)).params as Record<string, number>
-        expect(mult, `multiplier of 1 is not a question at d=${d} s=${s}`).toBeGreaterThanOrEqual(2)
-        expect(targetDen).toBe(b! * mult!)
-      }
+  it('asks six genuinely different questions, none of them the house style', () => {
+    // Rion's complaint, as a test. He said the questions felt repetitive — "the
+    // subject might change slightly, but the pattern remained" — and on this
+    // standard he was right: there was exactly one sentence.
+    const items = everyItem()
+    const shapes = new Map<string, number>()
+    const formats = new Map<number, number>()
+    for (const item of items) {
+      const key = shape(item.prompt)
+      shapes.set(key, (shapes.get(key) ?? 0) + 1)
+      formats.set(item.params.format!, (formats.get(item.params.format!) ?? 0) + 1)
+    }
+
+    expect(shapes.size).toBeGreaterThanOrEqual(6)
+    for (const [key, count] of shapes) {
+      expect(count / items.length, `"${key}" is ${((count / items.length) * 100).toFixed(0)}% of items`)
+        .toBeLessThan(0.35)
+    }
+    // Formats, not just wordings: six sentences that were really one question
+    // would pass the check above and fail the point of it.
+    expect(formats.size).toBe(6)
+    for (const [format, count] of formats) {
+      expect(count / items.length, `format ${format} is too much of the diet`).toBeLessThan(0.35)
     }
   })
 
-  it('answers with a whole number, never a fraction', () => {
-    // The prompt asks for the missing top number. A fractional key would mean
+  it('puts the two hardest representations out of reach of the easiest band', () => {
+    // Reducing and recognising both need the multiplier recovered and then
+    // divided out. A format is not the difficulty dial, but a hard format
+    // handed to the lowest-rated player is a trap.
+    const easyFormats = new Set(itemsAt(EASIEST, 200).map((i) => i.params.format))
+    expect(easyFormats.has(HOW_MANY_PIECES)).toBe(false)
+    expect(easyFormats.has(WHICH_SAME)).toBe(false)
+
+    const hardFormats = new Set(itemsAt(HARDEST, 200).map((i) => i.params.format))
+    expect(hardFormats.has(HOW_MANY_PIECES)).toBe(true)
+    expect(hardFormats.has(WHICH_SAME)).toBe(true)
+  })
+
+  it('answers with a whole number on every format except the recognition one', () => {
+    // Each of these asks for a count or a factor. A fractional key would mean
     // the question and the answer box disagree about what is wanted.
-    for (let s = 0; s < 100; s++) {
-      const item = mt4nf1.generate(40, makeRng(s))
-      expect(R.parse(item.answer.canonical)!.isInteger(), item.prompt).toBe(true)
+    for (const item of everyItem()) {
+      const value = R.parse(item.answer.canonical)!
+      if (item.params.format === WHICH_SAME) {
+        expect(value.isInteger(), item.prompt).toBe(false)
+        expect(item.answer.canonical, item.prompt).toBe(`${item.params.a}/${item.params.b}`)
+      } else {
+        expect(value.isInteger(), item.prompt).toBe(true)
+      }
     }
   })
 
-  it('names adding the multiplier instead of multiplying by it', () => {
-    const item = mt4nf1.generate(40, makeRng(3))
-    const { a, mult } = item.params as Record<string, number>
-    const added = item.misconceptions.find((m) => m.id === 'added-multiplier')
-    // Only asserted when it survives the collision filters, which is the point
-    // of looking it up by id rather than by position.
-    if (added) expect(added.signature).toBe(String(a! + mult!))
+  it('says where the answer box goes on exactly the formats with a blank in them', () => {
+    // The box sitting above `/12` is a better answer to "he might type 9/12"
+    // than any wording is. Where there is no expression to sit inside — a
+    // sentence, a word question, three options — there is no slot to give.
+    for (const item of everyItem()) {
+      const { a, b, targetDen, scaledNum, format } = item.params as Record<string, number>
+      if (format === MISSING_NUMERATOR) {
+        expect(item.promptWithSlot, item.prompt).toBe(`${a}/${b} = {}/${targetDen}`)
+        expect(item.prompt).toContain('What is the missing top number?')
+      } else if (format === MISSING_DENOMINATOR) {
+        expect(item.promptWithSlot, item.prompt).toBe(`${a}/${b} = ${scaledNum}/{}`)
+        expect(item.prompt).toContain('What is the missing bottom number?')
+      } else {
+        expect(item.promptWithSlot, item.prompt).toBeUndefined()
+      }
+    }
   })
 
-  it('names adding the denominator gap to the top instead of scaling', () => {
+  it('offers three distinct options, one of them right, in a moving position', () => {
+    const items = everyItem().filter((i) => i.params.format === WHICH_SAME)
+    expect(items.length).toBeGreaterThan(0)
+    const positions = new Set<number>()
+    for (const item of items) {
+      const options = optionsOf(item.params)
+      positions.add(item.params.slot!)
+      expect(new Set(options).size, item.prompt).toBe(3)
+      // Distinct as strings is not enough — two options that are the same
+      // *amount* would make the question have two right answers.
+      const values = options.map((o) => R.parse(o)!.toString())
+      expect(new Set(values).size, item.prompt).toBe(3)
+      expect(options[item.params.slot!], item.prompt).toBe(item.answer.canonical)
+      // And no option is one whole written as a fraction. `3/3` can be crossed
+      // off at a glance without thinking about equivalence at all, which would
+      // quietly turn three options into two.
+      for (const option of options) expect(R.parse(option)!.toString(), item.prompt).not.toBe('1')
+    }
+    // A right answer that is always in the same place is a question about
+    // position rather than about fractions.
+    expect(positions).toEqual(new Set([0, 1, 2]))
+  })
+
+  it('names the two half-done reductions as the wrong options', () => {
+    // Dividing the top and leaving the bottom, or the other way round. Both are
+    // always genuinely wrong: dividing one number of a fraction and not the
+    // other cannot leave the amount alone.
+    for (const item of everyItem().filter((i) => i.params.format === WHICH_SAME)) {
+      const { a, b, targetDen, scaledNum } = item.params as Record<string, number>
+      const ids = item.misconceptions.map((m) => m.id)
+      expect(ids, item.prompt).toContain('divided-the-top-only')
+      expect(ids, item.prompt).toContain('divided-the-bottom-only')
+      const byId = new Map(item.misconceptions.map((m) => [m.id, m.signature]))
+      expect(byId.get('divided-the-top-only')).toBe(new R(a!, targetDen!).toString())
+      expect(byId.get('divided-the-bottom-only')).toBe(new R(scaledNum!, b!).toString())
+    }
+  })
+
+  it('names writing the fraction only where a child would write one', () => {
+    // He may well have understood it perfectly and answered 3/4. Naming it lets
+    // the film room say so instead of filing it as "off". On the two equation
+    // formats the slot makes it unlikely; on "how many fourths?" there is no
+    // slot to help, so it matters most there.
+    //
+    // And it is deliberately absent everywhere else. Nobody answers "what was
+    // it multiplied by?" with a fraction, and a misconception no child would
+    // ever type is dead weight that looks like coverage.
+    const wanted = new Set([MISSING_NUMERATOR, MISSING_DENOMINATOR, HOW_MANY_PIECES])
+    for (const item of everyItem()) {
+      const ids = item.misconceptions.map((m) => m.id)
+      expect(ids.includes('wrote-the-fraction'), item.prompt).toBe(wanted.has(item.params.format!))
+    }
+  })
+
+  it('names the additive slip in whichever direction the format runs', () => {
     // 3/4 = ?/12: the bottom went up by 8, so the child puts the top up by 8
-    // too. This is the classic additive slip and it is always available, since
-    // a + (targetDen - b) can never equal a × mult for a proper fraction.
-    for (let s = 0; s < 60; s++) {
-      const item = mt4nf1.generate(45, makeRng(s))
-      const { a, b, targetDen } = item.params as Record<string, number>
+    // too. The same mistake keeps the same id when the blank moves underneath,
+    // but the number it produces is not the same one — there it is the bottom
+    // that gets the top's gap added to it. Carrying one formula across both
+    // would name a value no child on that format could have typed.
+    //
+    // Either way it is always available: both would need a to equal b, and a/b
+    // is always a proper fraction.
+    let onTop = 0
+    let underneath = 0
+    for (const item of everyItem()) {
+      const { a, b, targetDen, format } = item.params as Record<string, number>
       const gap = item.misconceptions.find((m) => m.id === 'added-difference')
-      if (gap) expect(gap.signature).toBe(String(a! + (targetDen! - b!)))
+      if (!gap) continue
+      if (format === MISSING_DENOMINATOR) {
+        underneath++
+        const topGap = (a! * targetDen!) / b! - a!
+        expect(gap.signature, item.prompt).toBe(String(b! + topGap))
+      } else {
+        onTop++
+        expect([MISSING_NUMERATOR, WORD_SAME_CUT], item.prompt).toContain(format)
+        expect(gap.signature, item.prompt).toBe(String(a! + (targetDen! - b!)))
+      }
+    }
+    expect(onTop).toBeGreaterThan(0)
+    expect(underneath).toBeGreaterThan(0)
+  })
+
+  it('never names a mistake on a format where that mistake cannot happen', () => {
+    // Adding straight across means nothing when the question asks which of
+    // three fractions matches, and a misconception no child could ever type is
+    // dead weight dressed up as coverage.
+    for (const item of everyItem()) {
+      expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
+      for (const m of item.misconceptions) {
+        expect(m.signature, item.prompt).not.toBe(item.answer.canonical)
+      }
     }
   })
 
@@ -98,10 +348,10 @@ describe('MT.4.NF.1 equivalent fractions', () => {
     // top number" and "wrote the multiplier" both produce 3. They cannot be told
     // apart, so only the one that says more about his thinking is named.
     let checked = 0
-    for (let s = 0; s < 200 && checked < 3; s++) {
-      const item = mt4nf1.generate(45, makeRng(s))
-      const { a, mult } = item.params as Record<string, number>
-      if (a !== mult) continue
+    for (let s = 0; s < 400 && checked < 3; s++) {
+      const item = mt4nf1.generate(30, makeRng(s))
+      const { a, mult, format } = item.params as Record<string, number>
+      if (format !== MISSING_NUMERATOR || a !== mult) continue
       checked++
       expect(item.misconceptions.some((m) => m.id === 'kept-numerator'), item.prompt).toBe(true)
       expect(item.misconceptions.some((m) => m.id === 'answered-multiplier'), item.prompt).toBe(false)
@@ -109,28 +359,9 @@ describe('MT.4.NF.1 equivalent fractions', () => {
     expect(checked, 'no item where the multiplier equals the top number').toBeGreaterThan(0)
   })
 
-  it('recognises writing the whole fraction rather than the missing number', () => {
-    // He may well have understood it perfectly and answered 9/12. The point of
-    // naming it is that the film room can say so instead of filing it as "off".
-    for (let s = 0; s < 40; s++) {
-      const item = mt4nf1.generate(30, makeRng(s))
-      const { a, b } = item.params as Record<string, number>
-      const wrote = item.misconceptions.find((m) => m.id === 'wrote-the-fraction')
-      expect(wrote, item.prompt).toBeDefined()
-      expect(wrote!.signature).toBe(new R(a!, b!).toString())
-    }
-  })
-
-  it('says where the answer box goes, so the box sits above the denominator', () => {
-    // The `wrote-the-fraction` misconception is a net under this. The slot is
-    // the fix: with the box sitting above `/12`, writing `9/12` into it is no
-    // longer the natural thing to do.
-    for (let s = 0; s < 40; s++) {
-      const item = mt4nf1.generate(30, makeRng(s))
-      const { a, b, targetDen } = item.params as Record<string, number>
-      expect(item.promptWithSlot).toBe(`${a}/${b} = {}/${targetDen}`)
-      // The sentence stays whole: the film room and the tutor still read it.
-      expect(item.prompt).toContain('What is the missing top number?')
+  it('never names two different children in the same word problem', () => {
+    for (const item of everyItem().filter((i) => i.params.format === WORD_SAME_CUT)) {
+      expect(item.params.nameA, item.prompt).not.toBe(item.params.nameB)
     }
   })
 
