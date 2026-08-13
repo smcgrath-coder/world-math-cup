@@ -84,9 +84,9 @@ Save into `public/art/` with exactly these names, lowercase, hyphenated:
 
 ```
 rion-portrait.png      rion-celebration.png   rion-ready.png
-captain-brazil.png     captain-germany.png    captain-italy.png
-captain-argentina.png  captain-france.png     captain-uruguay.png
-captain-spain.png      captain-england.png
+captain-spain.png      captain-argentina.png  captain-france.png
+captain-england.png    captain-brazil.png     captain-morocco.png
+captain-portugal.png   captain-belgium.png
 coach.png              analyst-explaining.png analyst-thinking.png
 ```
 
@@ -123,19 +123,34 @@ Base prompt for each, substituting the bracketed parts:
 > kit with the captain's armband. Expression: [EXPRESSION]. Facing
 > three-quarters toward the viewer.
 
-| Country | Kit | Suggested expression |
-|---|---|---|
-| Brazil (5★) | yellow shirt, green trim, blue shorts | Serene, utterly unbothered — the best team in the world knows it |
-| Germany (4★) | white shirt with black detailing | Cool, analytical, appraising |
-| Italy (4★) | deep azure blue shirt | Watchful, arms-folded stillness |
-| Argentina (3★) | sky blue and white vertical stripes | Fierce, chin down, intense |
-| France (2★) | dark blue shirt, white and red trim | Relaxed, faintly amused |
-| Uruguay (2★) | sky blue shirt | Weathered, stubborn, immovable |
-| Spain (2★) | red shirt, gold trim | Bright, quick-eyed, newly crowned |
-| England (1★) | white shirt, navy trim | Earnest, hopeful, slightly nervous |
+These are the eight in **tier 1** of `src/data/opponents.ts` — the strongest
+side of the roster, the ones he meets at the sharp end. They are listed in the
+order he will climb through them.
+
+The star count is World Cup titles won, not strength, and is there because it is
+the kind of detail Rion will notice. Spain has two stars and is the hardest team
+in the game.
+
+| Country | Kit | Plays like | Suggested expression |
+|---|---|---|---|
+| Spain (2★) — **final boss** | red shirt, gold trim | Passing, technical, small and quick | Bright, quick-eyed, entirely certain |
+| Argentina (3★) | sky blue and white vertical stripes | Passing into shooting | Fierce, chin down, intense |
+| France (2★) | dark blue shirt, white and red trim | Pace, then a finish | Relaxed, faintly amused |
+| England (1★) | white shirt, navy trim | Physical, quick | Earnest, hopeful, slightly nervous |
+| Brazil (5★) | yellow shirt, green trim, blue shorts | Dribbling flair, leaky at the back | Serene, utterly unbothered |
+| Morocco (0★) | red shirt, dark green trim | A defensive wall | Immovable, watchful, arms folded |
+| Portugal (0★) | red shirt, dark green trim | Shooting from anywhere | Swaggering, chin up |
+| Belgium (0★) | red shirt, black trim | Balanced, no weakness | Composed, professional, unreadable |
 
 Vary hair, build, and skin tone across the eight so they don't read as the same
-person in different kits. Give each a distinct silhouette.
+person in different kits. Give each a distinct silhouette. Morocco and Portugal
+share a red-and-green palette, so lean on the shirt cut and the two very
+different expressions to tell them apart.
+
+Germany, Italy and Uruguay were in the first version of this list and are still
+in the game — they sit in tier 2 now, because the roster is generated from the
+published FIFA ranking rather than by hand. Art already made for them is not
+wasted, it is just not the priority.
 
 ### coach
 > Chest-up portrait of a warm, experienced football coach in their fifties,

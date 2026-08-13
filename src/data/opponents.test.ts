@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { OPPONENTS, OPPONENTS_BY_ID, WORLD_CUP_FIELD } from './opponents'
+// Imported rather than read off disk: this project has no node types, on
+// purpose, because nothing under src/ should be able to reach the filesystem.
+import promptPack from '../../docs/art/nano-banana-prompt-pack.md?raw'
 
 describe('opponent roster', () => {
   it('fields exactly the 48 teams that qualified for 2026', () => {
@@ -87,5 +90,31 @@ describe('opponent roster', () => {
     // With only a handful of opponents he exhausts the roster in a week.
     expect(OPPONENTS.length).toBe(57)
     expect(OPPONENTS.filter((o) => !o.inWorldCup)).toHaveLength(9)
+  })
+})
+
+describe('the art prompt pack', () => {
+  /**
+   * The roster is regenerated from the published FIFA ranking every few months,
+   * and when it is, the eight teams worth commissioning captain art for change.
+   * Nothing else would notice: the pack is a document, the art is made by hand,
+   * and a stale list costs a batch of drawings of the wrong countries.
+   */
+  it('asks for a captain for exactly the teams in tier 1', () => {
+    const pack = promptPack
+    const asked = [...pack.matchAll(/captain-([a-z]+)\.png/g)].map((m) => m[1]).sort()
+    const tierOne = OPPONENTS.filter((o) => o.tier === 1)
+      .map((o) => o.id)
+      .sort()
+
+    expect(asked).toEqual(tierOne)
+  })
+
+  it('names the hardest team as the final boss, so the art matches the climb', () => {
+    const pack = promptPack
+    const hardest = [...OPPONENTS].sort((a, b) => b.rating - a.rating)[0]
+    const boss = /\|\s*([A-Za-z ]+?)\s*\(\d+★\)\s*—\s*\*\*final boss\*\*/.exec(pack)
+
+    expect(boss?.[1]).toBe(hardest.name)
   })
 })
