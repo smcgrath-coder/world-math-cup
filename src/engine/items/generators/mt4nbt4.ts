@@ -1161,7 +1161,7 @@ function missingSubtrahendMistakes(a: number, b: number, difference: number): Ca
       label: 'Added the two numbers that were already there',
       explanation:
         `${a} + ${difference} = ${a + difference}, which is more than ${a}. The box holds the ` +
-        `part that came *off* ${a}, so it cannot be bigger than ${a}. It is the gap between ` +
+        `part that came off ${a}, so it cannot be bigger than ${a}. It is the gap between ` +
         `${difference} and ${a}: ${a} ${MINUS} ${difference} = ${b}.`,
     },
     {
