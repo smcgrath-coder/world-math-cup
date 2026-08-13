@@ -86,13 +86,18 @@ describe('the timers switch', () => {
 })
 
 describe('the sound switch', () => {
-  it('persists, and admits there is nothing to hear yet', () => {
+  it('persists', () => {
     open()
     const sound = screen.getByRole('switch', { name: /sound/i })
     fireEvent.click(sound)
 
     expect(getStore().getState().settings.soundEnabled).toBe(false)
-    expect(screen.getByTestId('sound-note').textContent).toMatch(/not built|no sound|nothing to hear/i)
+  })
+
+  it('says it is music only, because a surprise noise is the thing to warn about', () => {
+    open()
+    expect(screen.getByTestId('sound-note').textContent).toMatch(/music only/i)
+    expect(screen.getByTestId('sound-note').textContent).toMatch(/no sound effects/i)
   })
 })
 

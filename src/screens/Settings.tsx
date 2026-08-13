@@ -61,8 +61,8 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
             onChange={(next) => getStore().updateSettings({ soundEnabled: next })}
           />
           <p data-testid="sound-note" className="text-[15px] leading-relaxed text-white/70">
-            There is nothing to hear yet — the music and crowd are not built. The switch remembers
-            what you chose for when they are.
+            Music only — a different loop for the training ground, a match and the tournament. There
+            are no sound effects, so nothing will ever go off unexpectedly.
           </p>
         </section>
 

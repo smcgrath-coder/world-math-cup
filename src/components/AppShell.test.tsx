@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppShell } from './AppShell'
+import { AppShell, trackFor } from './AppShell'
+import { TRACK_NAMES } from '../audio/music'
 import { CELEBRATION_MS } from '../screens/Match'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft, Country } from '../store/storage'
@@ -331,5 +332,47 @@ describe('the shell as a whole', () => {
         /streak|days? in a row|you haven’t|you haven't|come back soon|missed a day|keep it up/i,
       )
     }
+  })
+})
+
+describe('trackFor', () => {
+  const base = {
+    country: true,
+    explained: true,
+    scouted: true,
+    result: null,
+    fixture: null,
+    tab: 'play' as const,
+  }
+
+  it('covers the whole journey with a loop each', () => {
+    expect(trackFor({ ...base, country: false })).toBe('main_theme')
+    expect(trackFor({ ...base, explained: false })).toBe('main_theme')
+    expect(trackFor({ ...base, scouted: false })).toBe('training_grounds')
+    expect(trackFor({ ...base, tab: 'play' })).toBe('tournament')
+    expect(trackFor({ ...base, tab: 'training' })).toBe('training_grounds')
+    expect(trackFor({ ...base, tab: 'card' })).toBe('main_theme')
+    expect(trackFor({ ...base, tab: 'settings' })).toBe('main_theme')
+  })
+
+  it('saves the tensest track for the knockouts', () => {
+    expect(trackFor({ ...base, fixture: { stakes: 'friendly' } })).toBe('match_ambience')
+    expect(trackFor({ ...base, fixture: { stakes: 'group' } })).toBe('match_ambience')
+    expect(trackFor({ ...base, fixture: { stakes: 'knockout' } })).toBe('penalty_shootout')
+  })
+
+  it('follows the shell, not the state, when both could apply', () => {
+    // Full time renders the post-match screen over the fixture, so the music
+    // has to change with it rather than staying on the match loop.
+    expect(trackFor({ ...base, result: {}, fixture: { stakes: 'knockout' } })).toBe('tournament')
+    // And the creator wins over everything, including a tab left on training.
+    expect(trackFor({ ...base, country: false, tab: 'training' })).toBe('main_theme')
+  })
+
+  it('names a track that exists', () => {
+    for (const tab of ['play', 'training', 'card', 'settings'] as const) {
+      expect(TRACK_NAMES).toContain(trackFor({ ...base, tab }))
+    }
+    expect(TRACK_NAMES).toContain(trackFor({ ...base, fixture: { stakes: 'knockout' } }))
   })
 })

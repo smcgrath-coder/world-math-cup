@@ -10,6 +10,8 @@ import { Match } from '../screens/Match'
 import type { MatchResult } from '../screens/Match'
 import { PostMatch } from '../screens/PostMatch'
 import { useAttempts, useCountry, useSettings } from '../store/useGameState'
+import { useMusicTrack } from '../audio/useMusicTrack'
+import type { TrackName } from '../audio/music'
 import type { Opponent } from '../data/opponents'
 import type { Stakes } from '../engine/match'
 
@@ -33,6 +35,39 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'card', label: 'Card' },
   { id: 'settings', label: 'Settings' },
 ]
+
+/**
+ * Which loop belongs to whichever screen is showing.
+ *
+ * Kept as a function of the shell's own state, and exported, because "the wrong
+ * music is playing" is otherwise the kind of thing nobody notices is a
+ * regression. The order matches the render below exactly — a track chosen from
+ * a branch the shell has already taken is a track for a screen that is not on.
+ *
+ * The try-out gets the training loop rather than anything grander. It is a
+ * scouting session and the whole design of it is that it does not feel like an
+ * exam.
+ */
+export function trackFor(state: {
+  country: boolean
+  explained: boolean
+  scouted: boolean
+  result: unknown | null
+  fixture: { stakes: Stakes } | null
+  tab: Tab
+}): TrackName {
+  if (!state.country || !state.explained) return 'main_theme'
+  if (!state.scouted) return 'training_grounds'
+  if (state.result !== null) return 'tournament'
+  // The tensest music for the tensest match: a knockout is the closest thing
+  // the game has to a shootout, and it is the only place this track fits.
+  if (state.fixture !== null) {
+    return state.fixture.stakes === 'knockout' ? 'penalty_shootout' : 'match_ambience'
+  }
+  if (state.tab === 'training') return 'training_grounds'
+  if (state.tab === 'play') return 'tournament'
+  return 'main_theme'
+}
 
 function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
   const country = useCountry()
@@ -61,6 +96,8 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
     at: number
   } | null>(null)
   const [result, setResult] = useState<MatchResult | null>(null)
+
+  useMusicTrack(trackFor({ country: country !== null, explained, scouted, result, fixture, tab }))
 
   if (!country) return <CountryCreator />
   if (!explained) return <CoachExplainer onDone={() => setExplained(true)} />

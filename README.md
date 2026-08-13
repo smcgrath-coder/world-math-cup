@@ -55,6 +55,26 @@ the rating maths can change and history recomputes.
   never sees the same one twice.
 - **`engine/match.ts`** — the match as a pure reducer. The screen only renders it.
 
+## Audio
+
+Five loops, one at a time, crossfaded — `src/audio/music.ts` picks the volume and
+`AppShell.trackFor` picks the track. Music only. There are no sound effects, and
+the settings copy says so, because an unexpected noise is the thing worth warning
+a child about.
+
+The files in `public/audio` are **built**, not dropped in. Generated music comes
+out as songs — fade in, play, fade out — and looping that dips to silence every
+couple of minutes, which sounds broken rather than quiet. `build-audio.py` trims
+the fade-out and crossfades the tail back over the head, so a plain `loop`
+attribute is enough at playback time.
+
+```bash
+python3 scripts/build-audio.py ~/Downloads   # <name>.mp3 -> public/audio/<name>.m4a
+```
+
+Nothing is preloaded. An element is built the first time its track is wanted, so
+a session that never reaches a knockout never downloads the knockout music.
+
 ## Regenerating data
 
 ```bash
@@ -124,6 +144,8 @@ Afterwards, on the iPad: open the URL in Safari, Share → Add to Home Screen.
 - `MT.4.NF.2` is a two-way choice, so chance alone scores 50% and that standard's
   rating reads high.
 - The inline answer box wraps onto its own line below 380px.
-- No audio. The sound switch says so plainly rather than pretending.
+- The tournament loop opens softly, so the seam is continuous but quiet. It reads
+  as a musical intro rather than a fault, but a later loop point would be tidier.
+- No character art on screen yet, though the files exist.
 - Grade-5 generators. Deliberate: they should arrive through the autumn at
   roughly the pace they arrive in his classroom.
