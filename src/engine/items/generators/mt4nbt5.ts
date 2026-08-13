@@ -16,12 +16,43 @@
  * So the worked steps never say "put down a zero". They say what the second part
  * actually is — 23 × 40, not 23 × 4 — because a rule about a zero is a rule to
  * forget, and 40 is a number he can see.
+ *
+ * Six formats. This generator used to emit `a × b` and nothing else at all —
+ * measured with every number masked out, one prompt shape, 100% of items — and
+ * Rion, who is ten and plays this, said the questions felt repetitive: "the
+ * subject might change slightly, but the pattern remained." On this standard he
+ * was exactly right, so:
+ *
+ *  - `BARE` is the product, both ways round, as before.
+ *  - `MISSING_FACTOR` turns it round: `? × 6 = 852`. A child who has memorised
+ *    "line them up and multiply" has nothing to line up, and the way through is
+ *    the relationship between multiplication and division.
+ *  - `WORD_GROUPS` is equal groups — a quantity per container and several
+ *    containers, which is what multiplication is *for*.
+ *  - `WORD_ROWS` is the array: rows and how many in each row. Same operation,
+ *    completely different picture, and the picture is the one that makes the
+ *    two-digit by two-digit split make sense.
+ *  - `PARTIAL_PRODUCT` asks for one part of the split on purpose: "to work out
+ *    23 × 45 you can split 45 into 40 + 5. What is 23 × 40?" This is the
+ *    standard's own named strategy, asked about directly instead of assumed.
+ *  - `TEN_TIMES` gives a fact and asks for it scaled: "8 × 7 = 56. What is
+ *    8 × 70?" Place value doing the work, with no algorithm involved.
+ *
+ * Formats are banded so that the two framings needing a step of reasoning on top
+ * of the multiplication arrive later, and so the known-fact framing sits low
+ * where it belongs. Within every band the carry dial still does the work it
+ * always did: format choice is variety, not difficulty.
+ *
+ * Deliberately *not* added: a rectangle's side lengths and its area. `MT.4.MD.3`
+ * owns area of rectangles and asks that question already, in those words. Two
+ * generators emitting the same question would split one skill across two card
+ * stats and rate neither of them honestly.
  */
 
 import type { Item, ItemGenerator, Misconception, Rng } from '../types'
 
 /**
- * U+00D7 MULTIPLICATION SIGN, not the letter x.
+ * U+00D7 MULTIPLICATION SIGN, not the letter x, and U+00F7 DIVISION SIGN.
  *
  * Prompt text is display-only — `checkAnswer` never sees it — so this cannot
  * affect grading, and the only question is how it reads. A letter x sitting
@@ -29,11 +60,34 @@ import type { Item, ItemGenerator, Misconception, Rng } from '../types'
  * his worksheets.
  */
 const TIMES = '×'
+const DIVIDE = '÷'
+const MINUS = '−'
 
 const BY_ONE = 'byOne'
 const BY_TWO = 'byTwo'
 
 const RANGE: [number, number] = [15, 88]
+
+/**
+ * The question formats, and the value of the `format` param that names each one.
+ *
+ * Exported because `params` has to carry enough for the soundness test to
+ * recompute the answer independently, and which question was asked is part of
+ * that: the same two factors make `23 × 45` (the product), `? × 45 = 1035` (one
+ * factor) and `23 × 40` (one part of the product).
+ */
+export const BARE = 0
+export const MISSING_FACTOR = 1
+export const WORD_GROUPS = 2
+export const WORD_ROWS = 3
+export const PARTIAL_PRODUCT = 4
+export const TEN_TIMES = 5
+
+/** `slot`: the missing factor is the first one written. */
+export const SLOT_FIRST = 1
+
+/** `split`: the factor being taken apart is the first one written. */
+export const SPLIT_FIRST = 1
 
 /**
  * The shapes each difficulty band can draw, easiest first.
@@ -73,21 +127,213 @@ interface ByTwoSpec {
 
 type Spec = ByOneSpec | ByTwoSpec
 
-const BANDS: readonly (readonly Spec[])[] = [
-  [{ shape: BY_ONE, digits: 2, multipliers: [2, 3, 4, 5], carry: 'none' }],
-  [
-    { shape: BY_ONE, digits: 2, multipliers: [2, 3, 4, 5, 6, 7, 8, 9], carry: 'any' },
-    { shape: BY_ONE, digits: 3, multipliers: [2, 3, 4, 5, 6], carry: 'any' },
-  ],
-  [
-    { shape: BY_ONE, digits: 3, multipliers: [2, 3, 4, 5, 6, 7, 8, 9], carry: 'some' },
-    { shape: BY_ONE, digits: 4, multipliers: [2, 3, 4, 5, 6], carry: 'some' },
-    { shape: BY_TWO, tens: [1, 2, 3], ones: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
-  ],
-  [
-    { shape: BY_ONE, digits: 4, multipliers: [3, 4, 5, 6, 7, 8, 9], carry: 'some' },
-    { shape: BY_TWO, tens: [2, 3, 4, 5, 6, 7, 8, 9], ones: [2, 3, 4, 5, 6, 7, 8, 9] },
-  ],
+interface Band {
+  specs: readonly Spec[]
+  /**
+   * How many zeros the round number in a ten-times question may have, so the
+   * framing scales from `8 × 70` to `8 × 700` rather than staying still.
+   */
+  zeros: readonly number[]
+  formats: readonly number[]
+}
+
+/**
+ * `formats` is not a difficulty dial — it is what stops the standard being one
+ * memorised expression. It is banded on two grounds only:
+ *
+ *  - The two framings that need a step of reasoning on top of the multiplication
+ *    — working back to a factor, and working out one named part of a split — are
+ *    kept out of the easiest band.
+ *  - `TEN_TIMES` is a known-fact question and does not get harder the way the
+ *    algorithm does, so it lives in the bottom half where it is the right amount
+ *    of work, and the top half leans on `PARTIAL_PRODUCT` for place value
+ *    instead. Putting an easy framing at the top of the range would make the
+ *    difficulty number mean less than it does.
+ */
+const BANDS: readonly Band[] = [
+  {
+    specs: [{ shape: BY_ONE, digits: 2, multipliers: [2, 3, 4, 5], carry: 'none' }],
+    zeros: [1],
+    formats: [BARE, WORD_GROUPS, TEN_TIMES],
+  },
+  {
+    specs: [
+      { shape: BY_ONE, digits: 2, multipliers: [2, 3, 4, 5, 6, 7, 8, 9], carry: 'any' },
+      { shape: BY_ONE, digits: 3, multipliers: [2, 3, 4, 5, 6], carry: 'any' },
+    ],
+    zeros: [1, 2],
+    formats: [BARE, WORD_GROUPS, TEN_TIMES, MISSING_FACTOR],
+  },
+  {
+    specs: [
+      { shape: BY_ONE, digits: 3, multipliers: [2, 3, 4, 5, 6, 7, 8, 9], carry: 'some' },
+      { shape: BY_ONE, digits: 4, multipliers: [2, 3, 4, 5, 6], carry: 'some' },
+      { shape: BY_TWO, tens: [1, 2, 3], ones: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+    ],
+    zeros: [1, 2],
+    formats: [BARE, WORD_GROUPS, WORD_ROWS, MISSING_FACTOR, PARTIAL_PRODUCT],
+  },
+  {
+    specs: [
+      { shape: BY_ONE, digits: 4, multipliers: [3, 4, 5, 6, 7, 8, 9], carry: 'some' },
+      { shape: BY_TWO, tens: [2, 3, 4, 5, 6, 7, 8, 9], ones: [2, 3, 4, 5, 6, 7, 8, 9] },
+    ],
+    zeros: [1, 2],
+    formats: [BARE, WORD_GROUPS, WORD_ROWS, MISSING_FACTOR, PARTIAL_PRODUCT],
+  },
+]
+
+/**
+ * Containers holding a quantity of something countable, for the equal-groups
+ * format.
+ *
+ * The per-container amount is the number the working splits into places, which
+ * for the one-digit shape is the long number — so these all have to be things
+ * that plausibly hold hundreds or thousands. A crate really does hold hundreds of
+ * apples and a truck really does carry thousands of bricks; "each box holds 8437
+ * pencils" would be a question about nothing.
+ *
+ * Exported so the soundness test can rebuild a prompt from `params` character
+ * for character — which shares the words, never the arithmetic.
+ */
+export const GROUP_CONTEXTS: readonly {
+  each: string
+  eachPlural: string
+  item: string
+  items: string
+  /** Third person singular, for "each crate holds". */
+  verb: string
+  /** Plural, for "the 4 crates hold". Stored, not built: has/have, carries/carry. */
+  verbPlural: string
+  /**
+   * The range of per-container amounts this situation can carry.
+   *
+   * A crate really does hold hundreds of apples and a truck really does carry
+   * thousands of bricks, but "each hall has 12 seats" is a question about
+   * nothing and "each crate holds 8437 apples" is a lie about crates. The
+   * amount is whichever factor the working takes apart, which runs from two
+   * digits to four across the range, so the situation has to be chosen to fit
+   * the number rather than the other way round.
+   */
+  minPer: number
+  maxPer: number
+}[] = [
+  {
+    each: 'crate',
+    eachPlural: 'crates',
+    item: 'apple',
+    items: 'apples',
+    verb: 'holds',
+    verbPlural: 'hold',
+    minPer: 10,
+    maxPer: 999,
+  },
+  {
+    each: 'truck',
+    eachPlural: 'trucks',
+    item: 'brick',
+    items: 'bricks',
+    verb: 'carries',
+    verbPlural: 'carry',
+    minPer: 100,
+    maxPer: 9999,
+  },
+  {
+    each: 'field',
+    eachPlural: 'fields',
+    item: 'tree',
+    items: 'trees',
+    verb: 'has',
+    verbPlural: 'have',
+    minPer: 10,
+    maxPer: 9999,
+  },
+  {
+    each: 'hall',
+    eachPlural: 'halls',
+    item: 'seat',
+    items: 'seats',
+    verb: 'has',
+    verbPlural: 'have',
+    minPer: 100,
+    maxPer: 9999,
+  },
+  {
+    each: 'box',
+    eachPlural: 'boxes',
+    item: 'nail',
+    items: 'nails',
+    verb: 'holds',
+    verbPlural: 'hold',
+    minPer: 10,
+    maxPer: 9999,
+  },
+  {
+    each: 'jar',
+    eachPlural: 'jars',
+    item: 'bead',
+    items: 'beads',
+    verb: 'holds',
+    verbPlural: 'hold',
+    minPer: 10,
+    maxPer: 9999,
+  },
+]
+
+/**
+ * The situations that can hold this many things, enumerated and filtered.
+ *
+ * The 0 fallback is a programming-error path: between them the contexts have to
+ * cover every amount the bands can draw, which is 10 to 9999. The game keeps
+ * running on a slightly odd sentence rather than handing an empty list to
+ * `rng.pick`, which throws.
+ */
+function groupContextFor(rng: Rng, per: number): number {
+  const suited: number[] = []
+  GROUP_CONTEXTS.forEach((c, i) => {
+    if (per >= c.minPer && per <= c.maxPer) suited.push(i)
+  })
+  return suited.length > 0 ? rng.pick(suited) : 0
+}
+
+/**
+ * Places laid out in rows, for the array format.
+ *
+ * Only the two-digit by two-digit shape draws these, because "6 rows of 8437
+ * chairs" is not a room anybody has been in. Each context supplies its own
+ * closing question rather than a noun to slot in, since the natural way to ask
+ * changes with the place.
+ */
+export const ROW_CONTEXTS: readonly {
+  subject: string
+  item: string
+  items: string
+  ask: string
+}[] = [
+  {
+    subject: 'A theater',
+    item: 'seat',
+    items: 'seats',
+    ask: 'How many seats does the theater have altogether?',
+  },
+  {
+    subject: 'An orchard',
+    item: 'tree',
+    items: 'trees',
+    ask: 'How many trees are in the orchard?',
+  },
+  {
+    subject: 'A choir',
+    item: 'singer',
+    items: 'singers',
+    ask: 'How many singers are in the choir?',
+  },
+  {
+    subject: 'A vegetable garden',
+    item: 'plant',
+    items: 'plants',
+    ask: 'How many plants are in the garden?',
+  },
 ]
 
 function bandIndexFor(difficulty: number): number {
@@ -111,6 +357,11 @@ function numberFrom(digits: readonly number[]): number {
   let value = 0
   for (let i = digits.length - 1; i >= 0; i--) value = value * 10 + digits[i]!
   return value
+}
+
+/** `1 apple`, `347 apples`. */
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
 }
 
 function popcount(mask: number): number {
@@ -163,6 +414,9 @@ function digitPool(multiplier: number, min: number, mustCarry: boolean): number[
  * worked steps shrink to one line, and "only the ones digit got multiplied"
  * becomes an answer of 0, which is not a mistake anybody makes. A 0 in the
  * *middle* is the opposite: `204 × 3` is worth meeting, so those places keep it.
+ *
+ * `TEN_TIMES` is the one framing where a round number is the whole point, and it
+ * builds its number itself rather than going through here.
  */
 function smallestDigit(place: number, digits: number): number {
   return place === 0 || place === digits - 1 ? 1 : 0
@@ -196,6 +450,73 @@ function buildByTwo(rng: Rng, spec: ByTwoSpec): Factors {
   }
 }
 
+/**
+ * A one-digit fact scaled up by a power of ten: 7 becomes 70 or 700.
+ *
+ * Built here rather than through `buildByOne` because the round number is the
+ * whole point of the framing, and because the band's carry rule has to land on
+ * the *fact* — `8 × 7` carries and `2 × 3` does not, and that is what makes this
+ * question harder or easier.
+ */
+function buildTenTimes(rng: Rng, band: Band): Factors {
+  const byOne = band.specs.filter((s): s is ByOneSpec => s.shape === BY_ONE)
+  const spec = byOne.length > 0 ? rng.pick(byOne) : TEN_TIMES_FALLBACK
+  const multiplier = rng.pick(spec.multipliers)
+  const mustCarry =
+    spec.carry === 'some' ? true : spec.carry === 'none' ? false : rng.int(0, 1) === 1
+  const digit = rng.pick(digitPool(multiplier, 1, mustCarry))
+  return { a: multiplier, b: digit * 10 ** rng.pick(band.zeros) }
+}
+
+/**
+ * Only reachable if a band offers the ten-times framing with no one-digit shape
+ * to build it from, which is a programming mistake — the game keeps running on a
+ * slightly-easy question rather than crashing mid-match.
+ */
+const TEN_TIMES_FALLBACK: ByOneSpec = {
+  shape: BY_ONE,
+  digits: 2,
+  multipliers: [2, 3, 4, 5, 6, 7, 8, 9],
+  carry: 'any',
+}
+
+/**
+ * The shapes a format can be asked about.
+ *
+ * Rows and columns, and one part of a split, both need two two-digit numbers.
+ * A missing factor needs the one-digit shape: `? × 21 = 672` comes back only by
+ * dividing by 21, and dividing by a two-digit number is a fifth-grade skill.
+ * With a one-digit shape, either the blank is the long number — recovered by
+ * dividing by a single digit, which this grade does — or the blank is the single
+ * digit, which is one of eight numbers and comes back by counting lots.
+ *
+ * The band tables already only offer each format where its shape exists, so the
+ * fallback is a programming-error path: the game keeps running on a question of
+ * the wrong shape rather than handing an empty list to `rng.pick`, which throws.
+ */
+function specsFor(band: Band, format: number): readonly Spec[] {
+  const wanted =
+    format === WORD_ROWS || format === PARTIAL_PRODUCT
+      ? BY_TWO
+      : format === MISSING_FACTOR
+        ? BY_ONE
+        : null
+  if (wanted === null) return band.specs
+  const suited = band.specs.filter((s) => s.shape === wanted)
+  return suited.length > 0 ? suited : band.specs
+}
+
+/** What a format decides, before the common parts are wrapped around it. */
+interface Draft {
+  prompt: string
+  promptWithSlot?: string
+  answer: string
+  /** Params this format needs beyond `a`, `b` and `format`. */
+  extra: Record<string, number>
+  workedSteps: string[]
+  misconceptions: Misconception[]
+}
+
 export const mt4nbt5: ItemGenerator = {
   standardId: 'MT.4.NBT.5',
   label: 'Multiplying big numbers',
@@ -203,24 +524,361 @@ export const mt4nbt5: ItemGenerator = {
 
   generate(difficulty: number, rng: Rng): Item {
     const d = clampDifficulty(difficulty)
-    const spec = rng.pick(BANDS[bandIndexFor(d)]!)
+    const band = BANDS[bandIndexFor(d)]!
+    const format = rng.pick(band.formats)
 
-    const { a, b } = spec.shape === BY_ONE ? buildByOne(rng, spec) : buildByTwo(rng, spec)
-    const product = a * b
+    let factors: Factors
+    if (format === TEN_TIMES) {
+      factors = buildTenTimes(rng, band)
+    } else {
+      const spec = rng.pick(specsFor(band, format))
+      factors = spec.shape === BY_ONE ? buildByOne(rng, spec) : buildByTwo(rng, spec)
+    }
+
+    const draft = draftFor(format, factors.a, factors.b, rng)
 
     return {
       standardId: 'MT.4.NBT.5',
       difficulty: d,
-      prompt: `${a} ${TIMES} ${b}`,
+      prompt: draft.prompt,
+      ...(draft.promptWithSlot === undefined ? {} : { promptWithSlot: draft.promptWithSlot }),
       // The largest product this can produce is 9999 × 9, so every value here is
       // an exact whole number nowhere near where doubles stop being exact.
-      answer: { kind: 'rational', canonical: String(product) },
-      params: { a, b },
-      workedSteps: workedSteps(a, b, product),
-      misconceptions: misconceptionsFor(a, b, product),
+      answer: { kind: 'rational', canonical: draft.answer },
+      params: { a: factors.a, b: factors.b, format, ...draft.extra },
+      workedSteps: draft.workedSteps,
+      misconceptions: draft.misconceptions,
     }
   },
 }
+
+function draftFor(format: number, a: number, b: number, rng: Rng): Draft {
+  switch (format) {
+    case MISSING_FACTOR:
+      return missingFactor(a, b, rng.int(0, 1))
+    case WORD_GROUPS:
+      return wordGroups(a, b, groupContextFor(rng, countedAs(a, b).per))
+    case WORD_ROWS:
+      return wordRows(a, b, rng.int(0, ROW_CONTEXTS.length - 1))
+    case PARTIAL_PRODUCT:
+      return partialProduct(a, b, rng.int(0, 1))
+    case TEN_TIMES:
+      return tenTimes(a, b)
+    default:
+      return bare(a, b)
+  }
+}
+
+/** Two two-digit numbers, or a long number and a one-digit multiplier. */
+function isByTwo(a: number, b: number): boolean {
+  return a >= 10 && b >= 10
+}
+
+/** The long number and the one-digit number, whichever way round they are written. */
+function byOneParts(a: number, b: number): [number, number] {
+  return a < 10 ? [b, a] : [a, b]
+}
+
+/**
+ * How the working reads the two factors: how many lots there are, and how big
+ * each lot is.
+ *
+ * The working always takes the *bigger* number apart into its places, because
+ * that is where place value lives — you cannot usefully split a 6. So a word
+ * problem has to put its per-container amount on that same number, or the
+ * sentence and the working describe two different situations.
+ */
+function countedAs(a: number, b: number): { per: number; groups: number } {
+  return isByTwo(a, b)
+    ? { per: a, groups: b }
+    : { per: Math.max(a, b), groups: Math.min(a, b) }
+}
+
+// ---------------------------------------------------------------------------
+// The formats
+
+/** `347 × 6`, or `6 × 347`. */
+function bare(a: number, b: number): Draft {
+  const product = a * b
+  const [long, multiplier] = byOneParts(a, b)
+
+  return {
+    prompt: `${a} ${TIMES} ${b}`,
+    answer: String(product),
+    extra: {},
+    workedSteps: productSteps(a, b, product, null),
+    misconceptions: keep(
+      productMistakes(
+        a,
+        b,
+        isByTwo(a, b)
+          ? `That is ${a} and ${b} put together. This one says ${TIMES}, which means ${b} lots of ` +
+              `${a}, so the answer comes out far bigger.`
+          : `That is ${a} and ${b} put together. This one says ${TIMES}, which means ${multiplier} ` +
+              `lots of ${long} — ${long} counted out ${multiplier} times over, so the answer comes ` +
+              `out far bigger.`,
+      ),
+      product,
+    ),
+  }
+}
+
+/** `? × 6 = 852`. Working back to the factor that is not there. */
+function missingFactor(a: number, b: number, slot: number): Draft {
+  const product = a * b
+  const shown = slot === SLOT_FIRST ? b : a
+  const hidden = slot === SLOT_FIRST ? a : b
+
+  return {
+    prompt:
+      slot === SLOT_FIRST
+        ? `? ${TIMES} ${b} = ${product}. What is the missing number?`
+        : `${a} ${TIMES} ? = ${product}. What is the missing number?`,
+    promptWithSlot:
+      slot === SLOT_FIRST ? `{} ${TIMES} ${b} = ${product}` : `${a} ${TIMES} {} = ${product}`,
+    answer: String(hidden),
+    extra: { slot },
+    workedSteps: missingFactorSteps(shown, hidden, product),
+    misconceptions: keep(
+      [
+        {
+          // Always available: the product is the hidden factor multiplied by
+          // something at least 2, so it is never the hidden factor itself.
+          id: 'answered-the-product',
+          value: product,
+          label: 'Wrote the total again',
+          explanation:
+            `${product} is what the two numbers come to, and it is already written in the ` +
+            `question. The box holds the number that gets you there: ${shown} ${TIMES} ${hidden} ` +
+            `= ${product}.`,
+        },
+        {
+          id: 'subtracted-instead',
+          value: product - shown,
+          label: 'Took one number away from the other',
+          explanation:
+            `${product} ${MINUS} ${shown} = ${product - shown}, which is what the question would ` +
+            `need if it said ${MINUS}. It says ${TIMES}: ${product} has to be split into equal ` +
+            `lots of ${shown}, and there are ${hidden} of them.`,
+        },
+        // Multiplying the two numbers on the screen, which is real — but only
+        // worth naming while the result is a number somebody might type.
+        // `45894 × 7649` runs to nine digits, and a misconception nobody can hit
+        // is dead weight dressed up as coverage.
+        ...(product * shown <= 99999
+          ? [
+              {
+                id: 'multiplied-instead',
+                value: product * shown,
+                label: 'Multiplied the two numbers that were already there',
+                explanation:
+                  `${product} is already ${shown} lots of something — that is what the question ` +
+                  `says. Multiplying it by ${shown} again gives ${product * shown}, which counts ` +
+                  `every lot ${shown} times over. What is wanted is how many lots there are: ` +
+                  `${product} ${DIVIDE} ${shown} = ${hidden}.`,
+              },
+            ]
+          : []),
+      ],
+      hidden,
+    ),
+  }
+}
+
+/** A quantity per container, and several containers. */
+function wordGroups(a: number, b: number, index: number): Draft {
+  const c = GROUP_CONTEXTS[index]!
+  const product = a * b
+  const { per, groups } = countedAs(a, b)
+
+  return {
+    prompt:
+      `Each ${c.each} ${c.verb} ${count(per, c.item, c.items)}. ` +
+      `How many ${c.items} are in ${count(groups, c.each, c.eachPlural)}?`,
+    answer: String(product),
+    extra: { context: index },
+    workedSteps: [
+      ...productSteps(
+        a,
+        b,
+        product,
+        `There are ${count(groups, c.each, c.eachPlural)}, and each one ${c.verb} ` +
+          `${count(per, c.item, c.items)}. That is ${groups} lots of ${per}.`,
+      ),
+      `So the ${count(groups, c.each, c.eachPlural)} ${c.verbPlural} ` +
+        `${count(product, c.item, c.items)} altogether.`,
+    ],
+    misconceptions: keep(
+      productMistakes(
+        a,
+        b,
+        `That is the two numbers put together. Each ${c.each} ${c.verb} ` +
+          `${count(per, c.item, c.items)}, and there are ${groups} of them — so the ` +
+          `${count(per, c.item, c.items)} get counted ${groups} times over, which comes out far ` +
+          `bigger.`,
+      ),
+      product,
+    ),
+  }
+}
+
+/** Rows, and how many in each row. The array picture of the same product. */
+function wordRows(a: number, b: number, index: number): Draft {
+  const c = ROW_CONTEXTS[index]!
+  const product = a * b
+  const { per, groups } = countedAs(a, b)
+
+  return {
+    prompt:
+      `${c.subject} has ${count(groups, 'row', 'rows')} of ${c.items}, with ` +
+      `${count(per, c.item, c.items)} in each row. ${c.ask}`,
+    answer: String(product),
+    extra: { context: index },
+    workedSteps: [
+      ...productSteps(
+        a,
+        b,
+        product,
+        `There ${groups === 1 ? 'is' : 'are'} ${count(groups, 'row', 'rows')}, and each row holds ` +
+          `${count(per, c.item, c.items)}. That is ${groups} lots of ${per}.`,
+      ),
+      `So there are ${count(product, c.item, c.items)} altogether.`,
+    ],
+    misconceptions: keep(
+      productMistakes(
+        a,
+        b,
+        `That is the two numbers put together. Each row holds ${count(per, c.item, c.items)}, and ` +
+          `there ${groups === 1 ? 'is' : 'are'} ${count(groups, 'row', 'rows')} — so the ` +
+          `${count(per, c.item, c.items)} get counted ${groups} times over, which comes out far ` +
+          `bigger.`,
+      ),
+      product,
+    ),
+  }
+}
+
+/** "To work out 23 × 45 you can split 45 into 40 + 5. What is 23 × 40?" */
+function partialProduct(a: number, b: number, split: number): Draft {
+  const parted = split === SPLIT_FIRST ? a : b
+  const whole = split === SPLIT_FIRST ? b : a
+  const ones = parted % 10
+  const tensDigit = Math.floor(parted / 10)
+  const tens = tensDigit * 10
+  const answer = whole * tens
+
+  return {
+    prompt:
+      `To work out ${a} ${TIMES} ${b} you can split ${parted} into ${tens} + ${ones}. ` +
+      `What is ${whole} ${TIMES} ${tens}?`,
+    answer: String(answer),
+    extra: { split },
+    workedSteps: [
+      `${parted} is ${tens} + ${ones}, so ${a} ${TIMES} ${b} comes in two parts: ` +
+        `${whole} ${TIMES} ${tens} and ${whole} ${TIMES} ${ones}. This question asks for the ` +
+        `first part on its own.`,
+      `${tens} is ${count(tensDigit, 'ten', 'tens')}, so ${whole} ${TIMES} ${tens} is ten times ` +
+        `${whole} ${TIMES} ${tensDigit}.`,
+      `${whole} ${TIMES} ${tensDigit} = ${whole * tensDigit}, and ten times that is ${answer}.`,
+      `So ${whole} ${TIMES} ${tens} = ${answer}. The other part, ` +
+        `${whole} ${TIMES} ${ones} = ${whole * ones}, is not what this question asked for.`,
+    ],
+    misconceptions: keep(
+      [
+        {
+          // Always available: the tens digit on its own is a tenth of what the
+          // tens place is worth, so it can never be the same answer.
+          id: 'used-the-tens-digit',
+          value: whole * tensDigit,
+          label: 'Multiplied by the tens digit instead of what it is worth',
+          explanation:
+            `${whole} ${TIMES} ${tensDigit} = ${whole * tensDigit} treats the ${tensDigit} in ` +
+            `${parted} as ${count(tensDigit, 'one', 'ones')}. It is in the tens place, so it is ` +
+            `worth ${tens}, and this part is ${whole} ${TIMES} ${tens} = ${answer} — ten times ` +
+            `what you had.`,
+        },
+        {
+          id: 'did-the-other-part',
+          value: whole * ones,
+          label: 'Worked out the other part',
+          explanation:
+            `${whole} ${TIMES} ${ones} = ${whole * ones} is the other part of the split, and it ` +
+            `is right — it is just not the one this question asked for. The part asked for is ` +
+            `${whole} ${TIMES} ${tens} = ${answer}.`,
+        },
+        {
+          id: 'answered-the-whole-product',
+          value: a * b,
+          label: 'Worked out the whole thing',
+          explanation:
+            `${a} ${TIMES} ${b} = ${a * b} is both parts added together, and it is right. This ` +
+            `question asks for one part on its own: ${whole} ${TIMES} ${tens} = ${answer}.`,
+        },
+      ],
+      answer,
+    ),
+  }
+}
+
+/** "8 × 7 = 56. What is 8 × 70?" — place value doing the work. */
+function tenTimes(multiplier: number, round: number): Draft {
+  const digit = Number(String(round).replace(/0+$/, ''))
+  const scale = round / digit
+  const fact = multiplier * digit
+  const answer = multiplier * round
+  const scaleWord = scale === 10 ? 'ten' : 'a hundred'
+  const places = scale === 10 ? 'one place' : 'two places'
+  const zeros = scale === 10 ? 'a 0 turns' : 'two 0s turn'
+
+  return {
+    prompt: `${multiplier} ${TIMES} ${digit} = ${fact}. What is ${multiplier} ${TIMES} ${round}?`,
+    answer: String(answer),
+    extra: {},
+    workedSteps: [
+      `${round} is ${scaleWord} times ${digit}, so ${multiplier} ${TIMES} ${round} is ` +
+        `${scaleWord} times ${multiplier} ${TIMES} ${digit}.`,
+      `${multiplier} ${TIMES} ${digit} = ${fact} is given, so this is ${scaleWord} times ${fact}.`,
+      `${fact} ${TIMES} ${scale} = ${answer}. Multiplying by ${scale} moves every digit ` +
+        `${places} to the left, which is why ${zeros} up on the end.`,
+      `So ${multiplier} ${TIMES} ${round} = ${answer}.`,
+    ],
+    misconceptions: keep(
+      [
+        {
+          // Always available: the fact is the answer divided by 10 or by 100, so
+          // it is never the answer itself.
+          id: 'copied-the-fact',
+          value: fact,
+          label: 'Gave the fact that was already there',
+          explanation:
+            `${fact} is ${multiplier} ${TIMES} ${digit}, which the question hands you. It asks ` +
+            `for ${multiplier} ${TIMES} ${round}, and ${round} is ${scaleWord} times ${digit} — ` +
+            `so the answer is ${scaleWord} times ${fact}, which is ${answer}.`,
+        },
+        {
+          id: 'one-zero-too-many',
+          value: answer * 10,
+          label: 'Put one 0 too many on the end',
+          explanation:
+            `${answer * 10} is ten times too big. ${round} is ${scaleWord} times ${digit}, not ` +
+            `ten times that again, so ${fact} grows by exactly ${places}: ${answer}.`,
+        },
+        {
+          id: 'added-instead',
+          value: multiplier + round,
+          label: 'Added instead of multiplying',
+          explanation:
+            `That is ${multiplier} and ${round} put together. This one says ${TIMES}, which means ` +
+            `${multiplier} lots of ${round}, so the answer comes out far bigger.`,
+        },
+      ],
+      answer,
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Worked steps
 
 /**
  * What each place is called, ones first.
@@ -237,23 +895,20 @@ function heading(i: number): string {
   return `${name[0]!.toUpperCase()}${name.slice(1)}`
 }
 
-/** Two two-digit numbers, or a long number and a one-digit multiplier. */
-function isByTwo(a: number, b: number): boolean {
-  return a >= 10 && b >= 10
-}
-
-/** The long number and the one-digit number, whichever way round they are written. */
-function byOneParts(a: number, b: number): [number, number] {
-  return a < 10 ? [b, a] : [a, b]
-}
-
-function workedSteps(a: number, b: number, product: number): string[] {
-  const steps = isByTwo(a, b) ? byTwoSteps(a, b) : byOneSteps(a, b)
+/**
+ * The whole working for a product, ending on the product.
+ *
+ * `opening` replaces the first line when the question is a word problem: a
+ * situation has no `×` sign on the screen, and a working that starts by talking
+ * about one is talking about something the child cannot see.
+ */
+function productSteps(a: number, b: number, product: number, opening: string | null): string[] {
+  const steps = isByTwo(a, b) ? byTwoSteps(a, b, opening) : byOneSteps(a, b, opening)
   steps.push(`So ${a} ${TIMES} ${b} = ${product}.`)
   return steps
 }
 
-function byOneSteps(a: number, b: number): string[] {
+function byOneSteps(a: number, b: number, opening: string | null): string[] {
   const [long, multiplier] = byOneParts(a, b)
   const digits = digitsOf(long)
 
@@ -265,7 +920,7 @@ function byOneSteps(a: number, b: number): string[] {
     .filter((part) => part.value > 0)
     .reverse()
 
-  const steps = [`${a} ${TIMES} ${b} means ${multiplier} lots of ${long}.`]
+  const steps = [opening ?? `${a} ${TIMES} ${b} means ${multiplier} lots of ${long}.`]
 
   if (places.length > 1) {
     steps.push(
@@ -287,12 +942,13 @@ function byOneSteps(a: number, b: number): string[] {
   return steps
 }
 
-function byTwoSteps(a: number, b: number): string[] {
+function byTwoSteps(a: number, b: number, opening: string | null): string[] {
   const tens = Math.floor(b / 10) * 10
   const ones = b % 10
 
   return [
-    `${a} ${TIMES} ${b} means ${b} lots of ${a}. Split ${b} into ${tens} + ${ones}.`,
+    opening ?? `${a} ${TIMES} ${b} means ${b} lots of ${a}.`,
+    `Split ${b} into ${tens} + ${ones}.`,
     `First part: ${a} ${TIMES} ${ones} = ${a * ones}.`,
     // Named as 40, not as "4 and then a zero". The zero is a consequence of the
     // number, not a step to remember, and a child who knows why it is there
@@ -304,23 +960,80 @@ function byTwoSteps(a: number, b: number): string[] {
 }
 
 /**
- * The wrong answers worth knowing by name, and the reason they happened.
+ * Working back to a missing factor.
  *
- * Written for a ten-year-old who is already braced for bad news: short
- * sentences, no jargon, and never a word about carelessness. Each one says what
- * he did and what it would have been the answer to, because "here is the
- * question you answered" is information and "wrong" is not.
+ * Two shapes, because the two blanks are genuinely different problems. When the
+ * blank is the long number, it comes back by taking the shown factor out of the
+ * product a place-value chunk at a time — partial quotients, every line a
+ * subtraction he can already do. When the blank is the single digit, there are
+ * only eight numbers it could be, and counting up to the one that lands is both
+ * quicker and closer to how a child actually does it.
  */
-function misconceptionsFor(a: number, b: number, product: number): Misconception[] {
-  const candidates = isByTwo(a, b) ? byTwoMistakes(a, b) : byOneMistakes(a, b)
+function missingFactorSteps(shown: number, hidden: number, product: number): string[] {
+  const steps = [
+    `${shown} and the missing number multiply together to make ${product}, so the missing number ` +
+      `is how many lots of ${shown} it takes to reach ${product}` +
+      // The division is only named when it is a division he can do. Writing
+      // "63 ÷ 21" over a two-digit divisor points at an operation he has not met,
+      // when the way through is to count lots of 21 until they reach 63.
+      `${shown < 10 ? `: ${product} ${DIVIDE} ${shown}` : ''}.`,
+  ]
 
+  if (hidden < 10) {
+    steps.push(
+      `${shown} ${TIMES} ${hidden - 1} = ${shown * (hidden - 1)}, which is short of ${product}.`,
+      // Not "makes ${shown * hidden} = ${product}": those are the same number, so
+      // it came out as "makes 45894 = 45894".
+      `One more lot of ${shown} reaches ${product} exactly, so the missing number is ${hidden}.`,
+    )
+    return steps
+  }
+
+  const chunks = digitsOf(hidden)
+    .map((digit, i) => digit * 10 ** i)
+    .filter((value) => value > 0)
+    .reverse()
+
+  let left = product
+  for (const chunk of chunks) {
+    const taken = chunk * shown
+    steps.push(
+      `${chunk} lots of ${shown} is ${taken}, and ${left} ${MINUS} ${taken} = ${left - taken}.`,
+    )
+    left -= taken
+  }
+
+  steps.push(
+    `Nothing is left, so it took ` +
+      `${chunks.length > 1 ? `${chunks.join(' + ')} = ${hidden}` : String(hidden)} lots of ` +
+      `${shown}. The missing number is ${hidden}.`,
+  )
+  return steps
+}
+
+// ---------------------------------------------------------------------------
+// The wrong answers worth knowing by name, and the reason they happened
+//
+// Written for a ten-year-old who is already braced for bad news: short
+// sentences, no jargon, and never a word about carelessness. Each one says what
+// he did and what it would have been the answer to, because "here is the
+// question you answered" is information and "wrong" is not.
+
+interface Candidate {
+  id: string
+  value: number
+  label: string
+  explanation: string
+}
+
+function keep(candidates: readonly Candidate[], correct: number): Misconception[] {
   const out: Misconception[] = []
   const seen = new Set<string>()
   for (const c of candidates) {
     // Never name a correct answer as a known mistake. In the easiest band the
     // dropped carry *is* the correct answer, which is exactly right: nothing
     // carried, so losing a carry is not a thing that can have happened.
-    if (c.value === product) continue
+    if (c.value === correct) continue
     const signature = String(c.value)
     // Two mistakes landing on the same value cannot be told apart. Keep the
     // first, which is the one that says more about what he was thinking.
@@ -331,14 +1044,19 @@ function misconceptionsFor(a: number, b: number, product: number): Misconception
   return out
 }
 
-interface Candidate {
-  id: string
-  value: number
-  label: string
-  explanation: string
+/**
+ * The wrong answers worth naming on a question that asks for the product.
+ *
+ * `flipped` is passed in because it is the one explanation that cannot be
+ * shared. A bare `23 × 45` can say "this one says ×"; a word problem has no
+ * times sign anywhere on the screen, and telling a child to look at one would be
+ * telling him to look for something that is not there.
+ */
+function productMistakes(a: number, b: number, flipped: string): Candidate[] {
+  return isByTwo(a, b) ? byTwoMistakes(a, b, flipped) : byOneMistakes(a, b, flipped)
 }
 
-function byOneMistakes(a: number, b: number): Candidate[] {
+function byOneMistakes(a: number, b: number, flipped: string): Candidate[] {
   const [long, multiplier] = byOneParts(a, b)
   const digits = digitsOf(long)
 
@@ -371,15 +1089,12 @@ function byOneMistakes(a: number, b: number): Candidate[] {
       id: 'added-instead',
       value: a + b,
       label: 'Added instead of multiplying',
-      explanation:
-        `That is ${a} and ${b} put together. This one says ${TIMES}, which means ${multiplier} ` +
-        `lots of ${long} — ${long} counted out ${multiplier} times over, so the answer comes out ` +
-        `far bigger.`,
+      explanation: flipped,
     },
   ]
 }
 
-function byTwoMistakes(a: number, b: number): Candidate[] {
+function byTwoMistakes(a: number, b: number, flipped: string): Candidate[] {
   const tensDigit = Math.floor(b / 10)
   const tens = tensDigit * 10
   const ones = b % 10
@@ -422,9 +1137,7 @@ function byTwoMistakes(a: number, b: number): Candidate[] {
       id: 'added-instead',
       value: a + b,
       label: 'Added instead of multiplying',
-      explanation:
-        `That is ${a} and ${b} put together. This one says ${TIMES}, which means ${b} lots of ` +
-        `${a}, so the answer comes out far bigger.`,
+      explanation: flipped,
     },
   ]
 }
