@@ -88,7 +88,11 @@ describe('PlayerCard', () => {
   it('starts a new player near the bottom, which is where the number has room to go', () => {
     render(<PlayerCard country={RIONDIA} card={card()} ratings={ratings()} />)
     const rank = deriveWorldRank(deriveOverall(card()))
-    expect(rank).toBeGreaterThan(OPPONENTS.length - 3)
+    // The bottom quarter of the field, which is what "near the bottom" means.
+    // This used to assert the bottom three, which only held because the old
+    // hand-tuned ratings clustered at the tail. They are now spaced evenly from
+    // the real FIFA order, so a 57 overall sits 54th of 58 rather than 56th.
+    expect(rank).toBeGreaterThan((OPPONENTS.length + 1) * 0.75)
     expect(screen.getByText(`#${rank} in the world`)).toBeInTheDocument()
   })
 
@@ -176,8 +180,11 @@ describe('PlayerCard', () => {
     render(<PlayerCard opponent={brazil} />)
 
     expect(screen.getByText('Brazil')).toBeInTheDocument()
-    expect(screen.getByText('94')).toBeInTheDocument()
-    expect(screen.getByText('#1 in the world')).toBeInTheDocument()
+    // Brazil are 5th now, not top. Spain won the 2026 tournament and lead the
+    // ranking; Brazil still wear five stars, because stars are titles won and
+    // the rating is form today. Those being different facts is the point.
+    expect(screen.getByText('89')).toBeInTheDocument()
+    expect(screen.getByText('#5 in the world')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /Brazil.*crest.*5/i })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /Pace \d+/ })).toBeInTheDocument()
   })

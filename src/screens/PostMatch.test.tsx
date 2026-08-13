@@ -107,7 +107,7 @@ describe('PostMatch', () => {
 
     // The defeat is still stated plainly, inside the same card.
     expect(headline).toHaveTextContent('Brazil took that one.')
-    expect(headline).toHaveTextContent(/played above yourself against a side rated 94/i)
+    expect(headline).toHaveTextContent(/played above yourself against a side rated 89/i)
     // And the ordinary defeat verdict has been replaced rather than added to.
     expect(screen.queryByTestId('verdict')).toBeNull()
   })
@@ -377,7 +377,7 @@ describe('the words', () => {
   })
 
   it('only credits playing above himself when the other side really was better', () => {
-    expect(climbLine(BRAZIL, 1, 3, 60)).toMatch(/played above yourself against a side rated 94/)
+    expect(climbLine(BRAZIL, 1, 3, 60)).toMatch(/played above yourself against a side rated 89/)
     expect(climbLine(CURACAO, 1, 3, 90)).not.toMatch(/above yourself/)
     expect(climbLine(CURACAO, 1, 3, 90)).toMatch(/pitched above where you’re rated/)
   })
