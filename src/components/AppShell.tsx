@@ -1,0 +1,142 @@
+import { useState } from 'react'
+import { CountryCreator } from '../screens/CountryCreator'
+import { CoachExplainer } from '../screens/CoachExplainer'
+import { Tryout } from '../screens/Tryout'
+import { TrainingGround } from '../screens/TrainingGround'
+import { Play } from '../screens/Play'
+import { MyCard } from '../screens/MyCard'
+import { SettingsScreen } from '../screens/Settings'
+import { Match } from '../screens/Match'
+import type { MatchResult } from '../screens/Match'
+import { PostMatch } from '../screens/PostMatch'
+import { useAttempts, useCountry, useSettings } from '../store/useGameState'
+import type { Opponent } from '../data/opponents'
+import type { Stakes } from '../engine/match'
+
+/**
+ * The whole app.
+ *
+ * Wiping the save has to reopen every gate, and a gate is a snapshot taken at
+ * mount (see `Session`), so the only honest way to reopen them is to mount a new
+ * session. That is what the key is for.
+ */
+export function AppShell() {
+  const [generation, setGeneration] = useState(0)
+  return <Session key={generation} onSaveReplaced={() => setGeneration((g) => g + 1)} />
+}
+
+type Tab = 'play' | 'training' | 'card' | 'settings'
+
+const TABS: readonly { id: Tab; label: string }[] = [
+  { id: 'play', label: 'Play' },
+  { id: 'training', label: 'Training' },
+  { id: 'card', label: 'Card' },
+  { id: 'settings', label: 'Settings' },
+]
+
+function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
+  const country = useCountry()
+  const settings = useSettings()
+  const attempts = useAttempts()
+
+  /**
+   * The gates, read from the save once and then owned here.
+   *
+   * Deriving them from the log on every render looks tidier and is wrong: the
+   * try-out writes its own attempts on the way to the card reveal, so a live
+   * gate would unmount the try-out on its own last answer and take the payoff —
+   * the entire reason he sat through it — with it.
+   *
+   * `country` is deliberately live. The creator has no closing moment to
+   * protect, and reading it live is what lets a save appearing from an import
+   * move him straight on.
+   */
+  const [explained, setExplained] = useState(settings.coachExplainerSeen)
+  const [scouted, setScouted] = useState(() => attempts.some((a) => a.context === 'tryout'))
+
+  const [tab, setTab] = useState<Tab>('play')
+  const [fixture, setFixture] = useState<{
+    opponent: Opponent
+    stakes: Stakes
+    at: number
+  } | null>(null)
+  const [result, setResult] = useState<MatchResult | null>(null)
+
+  if (!country) return <CountryCreator />
+  if (!explained) return <CoachExplainer onDone={() => setExplained(true)} />
+  if (!scouted) return <Tryout onDone={() => setScouted(true)} />
+
+  if (result !== null) {
+    return (
+      <PostMatch
+        matchId={result.matchId}
+        opponent={result.opponent}
+        score={result.score}
+        questions={result.questions}
+        onDone={() => setResult(null)}
+      />
+    )
+  }
+
+  if (fixture !== null) {
+    return (
+      <Match
+        // Keyed on the fixture and nothing else. A match writes to the log as it
+        // goes, so a key derived from the log — the attempt count was the first
+        // attempt at this — remounts the screen mid-match and silently starts a
+        // second match over the top of the first.
+        key={`${fixture.opponent.id}:${fixture.stakes}:${fixture.at}`}
+        opponent={fixture.opponent}
+        stakes={fixture.stakes}
+        onDone={(played) => {
+          setResult(played)
+          setFixture(null)
+        }}
+      />
+    )
+  }
+
+  return (
+    <div className="flex min-h-full flex-col bg-pitch-dark">
+      {/*
+        Only the open tab is mounted. Browsing state — a team sheet he was
+        reading, a topic he was half-choosing — is not worth carrying, and coming
+        back to a screen mid-thought is more confusing than starting it again. A
+        setting is different, and settings live on disk.
+      */}
+      <main className="min-h-0 flex-1 pb-20">
+        {tab === 'play' && (
+          <Play
+            onKickoff={(opponent, stakes) => setFixture({ opponent, stakes, at: Date.now() })}
+            onTrain={() => setTab('training')}
+          />
+        )}
+        {tab === 'training' && <TrainingGround onDone={() => setTab('play')} />}
+        {tab === 'card' && <MyCard onTrain={() => setTab('training')} />}
+        {tab === 'settings' && <SettingsScreen onSaveReplaced={onSaveReplaced} />}
+      </main>
+
+      <nav
+        role="navigation"
+        aria-label="Main"
+        className="fixed inset-x-0 bottom-0 flex border-t border-white/10 bg-pitch-dark/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+      >
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            aria-current={tab === id ? 'page' : undefined}
+            className={
+              tab === id
+                ? 'flex-1 px-2 py-3.5 text-sm font-black text-gold'
+                : 'flex-1 px-2 py-3.5 text-sm font-bold text-white/55'
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+    </div>
+  )
+}
