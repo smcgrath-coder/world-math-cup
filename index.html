@@ -2,8 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      viewport-fit=cover so the pitch reaches the edges on a notched iPad, and
+      user-scalable=no because a pinch-zoom mid-question moves the numpad out
+      from under his thumb.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#14532d" />
+    <meta name="description" content="Build a country, take the try-out, and play your way to the World Cup." />
+
+    <!-- Installed to the home screen, this opens without Safari's chrome. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Math Cup" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <!-- iOS ignores the manifest for the home screen and reads this. -->
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+
     <title>World Math Cup</title>
   </head>
   <body>

@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers static assets — the same shape finns-chores is deployed
+  // with, so there is one deployment story across both projects.
+  //
+  //   npm run build && npx wrangler deploy
+  //
+  // The first deploy asks you to log in and creates the worker.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "world-math-cup",
+  "compatibility_date": "2026-08-13",
+  "assets": {
+    "directory": "./dist",
+    // Everything is client-side, so any unknown path should still hand back the
+    // app rather than a 404. There is no router today, but a home-screen icon
+    // can be launched at a stale path after an update.
+    "not_found_handling": "single-page-application"
+  }
+}
