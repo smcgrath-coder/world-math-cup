@@ -32,7 +32,12 @@ import type { Opponent } from '../data/opponents'
 // ---------------------------------------------------------------------------
 // Fixtures
 
-/** Tier 1, rating 94: the final boss. */
+/**
+ * Tier 1, rating 89 — a top-tier side, and the one these tests use for tier-1
+ * behaviour. Not the final boss any more: Spain won the 2026 tournament and lead
+ * the ranking at 92. Both are tier 1, so `concedeAfter` and `tackleBackMs` are
+ * identical between them and every assertion here holds for either.
+ */
 const BRAZIL = OPPONENTS.find((o) => o.id === 'brazil')!
 /** Tier 4, rating 56: the gentlest opponent on the roster. */
 const CURACAO = OPPONENTS.find((o) => o.id === 'curacao')!

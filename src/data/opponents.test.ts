@@ -30,6 +30,23 @@ describe('opponent roster', () => {
     }
   })
 
+  it('makes Spain the final boss, and keeps the table in FIFA order', () => {
+    // Spain won the 2026 tournament and lead the ranking, so they are the
+    // strongest side in the game. Deliberately not Brazil: this file used to
+    // treat the five stars above Brazil's crest as the difficulty warning, and
+    // after that tournament they are not. Stars are titles won; the rating is
+    // form today.
+    const strongest = [...OPPONENTS].sort((a, b) => b.rating - a.rating)[0]!
+    expect(strongest.id).toBe('spain')
+    expect(strongest.tier).toBe(1)
+
+    // Ratings are derived from the published rank by
+    // scripts/rerank-opponents.mjs, so the file order and the strength order
+    // must agree. If they drift, the script was not re-run.
+    const ratings = OPPONENTS.map((o) => o.rating)
+    expect(ratings).toEqual([...ratings].sort((a, b) => b - a))
+  })
+
   it('keeps Italy out of the World Cup field but in the game', () => {
     const italy = OPPONENTS_BY_ID.italy!
     expect(italy.inWorldCup).toBe(false)

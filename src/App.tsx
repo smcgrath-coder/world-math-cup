@@ -102,11 +102,12 @@ function App() {
 /**
  * A stand-in for the fixture list.
  *
- * Eight sides spanning the roster, so both ends of every dial can be played
- * before Task 21 builds the real thing: Brazil at 94 in a knockout is the
- * hardest the game gets, Curaçao at 56 in a friendly is the gentlest.
+ * Nine sides spanning the roster, so both ends of every dial can be played
+ * before Task 21 builds the real thing: Spain at 92 in a knockout is the hardest
+ * the game gets, Curaçao at 56 in a friendly is the gentlest.
  */
 const SHORTLIST = [
+  'spain',
   'brazil',
   'argentina',
   'england',
