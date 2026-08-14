@@ -15,6 +15,7 @@ import {
   recordAnswer,
   startTryout,
 } from '../engine/tryout'
+import { canonicalOf } from '../engine/answer'
 
 const SEED = 4242
 
@@ -59,7 +60,9 @@ function perfectRun(seed: number): string[] {
   let state = startTryout(seed)
   const answers: string[] = []
   while (!isComplete(state)) {
-    answers.push(itemFor(currentStep(state)!, currentDifficulty(state), rng).answer.canonical)
+    answers.push(
+      canonicalOf(itemFor(currentStep(state)!, currentDifficulty(state), rng).answer),
+    )
     state = recordAnswer(state, true)
   }
   return answers

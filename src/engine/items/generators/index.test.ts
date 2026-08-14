@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { STANDARDS_BY_ID } from '../../../curriculum/standards.generated'
 import { makeRng } from '../rng'
 import { ALL_GENERATORS, generatorFor } from './index'
+import { canonicalOf } from '../../answer'
 
 /**
  * Ids that are deliberately not in the curriculum, listed one by one.
@@ -130,7 +131,7 @@ describe('the generator registry', () => {
         const item = gen.generate(d, makeRng(d))
         expect(item.standardId, `${gen.standardId} at d=${d}`).toBe(gen.standardId)
         expect(item.prompt.trim().length, `${gen.standardId} at d=${d}`).toBeGreaterThan(0)
-        expect(item.answer.canonical.trim().length, `${gen.standardId} at d=${d}`).toBeGreaterThan(0)
+        expect(canonicalOf(item.answer).trim().length, `${gen.standardId} at d=${d}`).toBeGreaterThan(0)
       }
     }
   })

@@ -116,7 +116,64 @@ export function normaliseInput(s: string): string {
 const UNIT_SUFFIX =
   /\s*(mm|cm|m|km|in|ft|yd|mi|inch|inches|foot|feet|yard|yards|mile|miles|mg|kg|g|lb|lbs|oz|ounce|ounces|pound|pounds|gram|grams|kilogram|kilograms|milligram|milligrams|ml|l|litre|litres|liter|liters|millilitre|millilitres|milliliter|milliliters|cup|cups|pint|pints|quart|quarts|gallon|gallons|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks|degree|degrees|cm2|m2|sq|square|units?|centimetre|centimetres|centimeter|centimeters|metre|metres|meter|meters|kilometre|kilometres|kilometer|kilometers|millimetre|millimetres|millimeter|millimeters)s?\.?$/i
 
-export type AnswerSpec = { kind: 'rational'; canonical: string }
+/**
+ * What a right answer is.
+ *
+ * `rational` is a number typed into the box. `choice` is one of a fixed set of
+ * options, picked rather than typed, which exists because some questions have a
+ * judgement for an answer rather than a value: *"is 348 a multiple of 6?"* used
+ * to be asked as *"give the remainder — 0 means yes"*, and the standard behind
+ * `MT.4.NF.2` asks for the symbols `>`, `=` and `<`, which cannot be typed into
+ * a numeric box at all.
+ *
+ * True/false is a two-option `choice`, not a third kind — see `trueFalse`.
+ * Nothing downstream of here needs to tell them apart, and a separate kind would
+ * be a second thing to prove sound for no gain.
+ */
+export type AnswerSpec =
+  | { kind: 'rational'; canonical: string }
+  | { kind: 'choice'; options: string[]; correct: number }
+
+export const TRUE_LABEL = 'True'
+export const FALSE_LABEL = 'False'
+
+/** A true/false question. `True` is always first, so the pair never swaps. */
+export function trueFalse(isTrue: boolean): AnswerSpec {
+  return { kind: 'choice', options: [TRUE_LABEL, FALSE_LABEL], correct: isTrue ? 0 : 1 }
+}
+
+/**
+ * How often this question is answered right by someone who knows nothing.
+ *
+ * Zero for a typed answer: there is no guessing your way to 4287. One over the
+ * number of options for a choice, which is what the rating model has to be told
+ * so that a lucky true/false does not build the card. See `updateRating`.
+ */
+export function guessFloor(spec: AnswerSpec): number {
+  return spec.kind === 'choice' ? 1 / spec.options.length : 0
+}
+
+/**
+ * The right answer, as text to show him.
+ *
+ * Every screen that reveals an answer — the match, the training ground's
+ * coaching card, the film room — wants this and does not care which kind it is.
+ */
+export function answerText(spec: AnswerSpec): string {
+  return spec.kind === 'choice' ? spec.options[spec.correct] : spec.canonical
+}
+
+/**
+ * The canonical numeric answer, for code that genuinely requires one.
+ *
+ * Throws on a choice rather than returning a fallback: every caller is either a
+ * test asserting a computed key or the soundness harness, and both would rather
+ * fail loudly than quietly assert something about the wrong shape of answer.
+ */
+export function canonicalOf(spec: AnswerSpec): string {
+  if (spec.kind !== 'rational') throw new Error(`expected a rational answer, got ${spec.kind}`)
+  return spec.canonical
+}
 
 export interface AnswerResult {
   correct: boolean
@@ -151,6 +208,8 @@ function parseGiven(given: string): { value: Rational; reduced: boolean } | null
 }
 
 export function checkAnswer(given: string, spec: AnswerSpec): AnswerResult {
+  if (spec.kind === 'choice') return checkChoice(given, spec)
+
   const parsed = parseGiven(given)
   if (!parsed) return { correct: false, unparseable: true }
 
@@ -161,6 +220,30 @@ export function checkAnswer(given: string, spec: AnswerSpec): AnswerResult {
 
   if (!parsed.value.equals(expected)) return { correct: false }
   return parsed.reduced ? { correct: true } : { correct: true, nudge: 'unreduced' }
+}
+
+/**
+ * Grade a picked option.
+ *
+ * Exact string match, with no normalisation. `ChoiceInput` hands back one of the
+ * strings it was given, so anything else is a programmer error rather than a
+ * child's typo — which is why `unparseable` is reserved for that case and never
+ * reached by tapping. There is no "I couldn't read that" for a choice.
+ *
+ * A spec whose `correct` is out of range throws, in line with `rational`: a
+ * broken answer key must be loud rather than silently mark a right answer wrong.
+ */
+function checkChoice(
+  given: string,
+  spec: { kind: 'choice'; options: string[]; correct: number },
+): AnswerResult {
+  if (spec.correct < 0 || spec.correct >= spec.options.length) {
+    throw new Error(`bad answer spec: correct ${spec.correct} of ${spec.options.length} options`)
+  }
+
+  const picked = spec.options.indexOf(given.trim())
+  if (picked === -1) return { correct: false, unparseable: true }
+  return { correct: picked === spec.correct }
 }
 
 /**
@@ -225,6 +308,8 @@ export function classifyMiss(
   // importing back would be circular.
   misconceptions: readonly { id: string; signature: string }[] = [],
 ): MissClassification {
+  if (spec.kind === 'choice') return classifyChoiceMiss(given, misconceptions)
+
   const parsed = parseGiven(given)
   if (!parsed) return { kind: 'unreadable' }
 
@@ -242,6 +327,34 @@ export function classifyMiss(
 
   const d = distance(parsed.value, expected)
   return { kind: isNear(parsed.value, expected, d.relativeError) ? 'near' : 'off', ...d }
+}
+
+/**
+ * Classify a wrong pick.
+ *
+ * `near` and `off` do not exist here, and no distance is reported. There is no
+ * neighbourhood on a set of options — he picked one or he did not — and a
+ * relative error computed from an option's *text* would be a number that looked
+ * meaningful and was not.
+ *
+ * What replaces them is better. A distractor is written to be a specific
+ * mistake, so its `signature` is the option text and a wrong pick is named
+ * outright rather than measured. That is what `near` was approximating all
+ * along: the reason to know a miss was close is to guess what he did, and here
+ * there is no guessing.
+ *
+ * Everything unnamed falls to `off`, which is the honest answer and which the
+ * film room already renders without any adjective on it.
+ */
+function classifyChoiceMiss(
+  given: string,
+  misconceptions: readonly { id: string; signature: string }[],
+): MissClassification {
+  const picked = given.trim()
+  for (const m of misconceptions) {
+    if (m.signature.trim() === picked) return { kind: 'misconception', misconceptionId: m.id }
+  }
+  return { kind: 'off' }
 }
 
 function distance(given: Rational, correct: Rational): { relativeError: number } {

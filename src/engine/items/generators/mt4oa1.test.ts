@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { NAMES, NOUNS, mt4oa1 } from './mt4oa1'
+import { canonicalOf } from '../../answer'
 
 const TIMES = '×'
 
@@ -124,8 +125,8 @@ describe('MT.4.OA.1 multiplicative comparison', () => {
     for (let d = EASIEST; d <= HARDEST; d += 3) {
       for (const item of itemsAt(d, 40)) {
         const { given, factor, direction } = item.params as Record<string, number>
-        const smaller = direction === FORWARD ? given! : Number(item.answer.canonical)
-        const larger = direction === FORWARD ? Number(item.answer.canonical) : given!
+        const smaller = direction === FORWARD ? given! : Number(canonicalOf(item.answer))
+        const larger = direction === FORWARD ? Number(canonicalOf(item.answer)) : given!
         expect(factor, item.prompt).toBeGreaterThanOrEqual(2)
         expect(factor, item.prompt).toBeLessThanOrEqual(12)
         expect(smaller, item.prompt).toBeGreaterThanOrEqual(2)
@@ -142,13 +143,13 @@ describe('MT.4.OA.1 multiplicative comparison', () => {
     for (const d of [EASIEST, 40, 60, HARDEST]) {
       for (const item of itemsAt(d, 30)) {
         const { given, factor, direction } = item.params as Record<string, number>
-        const smaller = direction === FORWARD ? given! : Number(item.answer.canonical)
-        const larger = direction === FORWARD ? Number(item.answer.canonical) : given!
+        const smaller = direction === FORWARD ? given! : Number(canonicalOf(item.answer))
+        const larger = direction === FORWARD ? Number(canonicalOf(item.answer)) : given!
         expect(item.workedSteps.join(' '), item.prompt).toContain(
           `${factor} ${TIMES} ${smaller} = ${larger}`,
         )
         expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-          item.answer.canonical,
+          canonicalOf(item.answer),
         )
       }
     }
@@ -178,7 +179,7 @@ describe('MT.4.OA.1 multiplicative comparison', () => {
         if (item.params.direction !== FORWARD) continue
         const { given, factor } = item.params as Record<string, number>
         const m = item.misconceptions.find((x) => x.id === 'added-the-comparison')
-        if (given! + factor! === Number(item.answer.canonical)) {
+        if (given! + factor! === Number(canonicalOf(item.answer))) {
           // 2 stickers and "2 times as many" is the one case where adding and
           // multiplying land on the same 4. Naming it would tell him a correct
           // answer is a known mistake, which is the one thing this app must

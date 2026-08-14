@@ -112,9 +112,28 @@ const clampDifficulty = (d: number) => (Number.isFinite(d) ? Math.min(99, Math.m
  * The `isFinite` check is the rail that makes "no rating may fall below 20" a
  * property of this module rather than a property of its inputs.
  */
-function stepped(rating: number, difficulty: number, correct: boolean, k: number): number {
-  const next = updateRating(rating, clampDifficulty(difficulty), correct, k)
+function stepped(
+  rating: number,
+  difficulty: number,
+  correct: boolean,
+  k: number,
+  guessFloor = 0,
+): number {
+  const next = updateRating(rating, clampDifficulty(difficulty), correct, k, guessFloor)
   return Number.isFinite(next) ? floorRating(next) : rating
+}
+
+/**
+ * The guess floor an attempt was answered under, from the log alone.
+ *
+ * Guarded at two options rather than trusting the number: a corrupt log claiming
+ * one option would give a floor of 1, which makes the expected score 1 and every
+ * answer a disappointment, and a claim of zero divides by zero. Both fall back
+ * to treating it as a typed answer, which is what every attempt written before
+ * choices existed genuinely was.
+ */
+function floorFor(choices: number | undefined): number {
+  return typeof choices === 'number' && choices >= 2 ? 1 / choices : 0
 }
 
 /** Matches count 3x training. Practice prepares; only matches make a rating true. */
@@ -271,7 +290,7 @@ export function deriveRatings(attempts: Attempt[], now: number): Map<string, Sta
     // Half K while provisional, for the same reason as domain seeding: not
     // enough evidence yet to move the card hard in either direction.
     const k = kFor(a.context) * (seen < PROVISIONAL_ATTEMPTS ? 0.5 : 1)
-    rated.set(id, stepped(rating, a.difficulty, a.correct, k))
+    rated.set(id, stepped(rating, a.difficulty, a.correct, k, floorFor(a.choices)))
   }
 
   const out = new Map<string, StandardRating>()
@@ -346,7 +365,10 @@ function derivePace(attempts: Attempt[], now: number): number {
     // `updateRating` with `correct: true` can only go up, but the `max` is a
     // rail rather than a comment: nothing that happens in here may lower PAC,
     // including a non-finite step arriving from a corrupt log.
-    pac = Math.max(pac, stepped(pac, difficulty, true, k))
+    // The guess floor applies here too. Tapping the right one of two buttons
+    // quickly is not evidence of recall speed, and PAC is the one stat measured
+    // in milliseconds.
+    pac = Math.max(pac, stepped(pac, difficulty, true, k, floorFor(a.choices)))
     wins += 1
   }
 

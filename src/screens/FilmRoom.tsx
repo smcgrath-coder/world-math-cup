@@ -31,7 +31,7 @@
 
 import { motion } from 'framer-motion'
 import { Character } from '../components/Character'
-import { classifyMiss } from '../engine/answer'
+import { classifyMiss, answerText } from '../engine/answer'
 import { LABELS_BY_STANDARD, STAT_LABELS } from '../components/stats'
 import { CARD_STATS } from '../store/derive'
 import type { Attempt } from '../store/types'
@@ -304,7 +304,7 @@ function MissCard({ miss }: { miss: Miss }) {
 
           <p className="mt-3 text-base font-bold">
             It comes out at{' '}
-            <span className="text-xl font-black text-gold">{item.answer.canonical}</span>.
+            <span className="text-xl font-black text-gold">{answerText(item.answer)}</span>.
           </p>
 
           <p className="mt-4 text-[11px] font-bold tracking-[0.15em] text-white/40 uppercase">

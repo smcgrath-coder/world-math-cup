@@ -41,7 +41,7 @@ import {
   STAT_LABELS,
   clampStat,
 } from '../components/stats'
-import { checkAnswer, classifyMiss } from '../engine/answer'
+import { checkAnswer, classifyMiss, answerText } from '../engine/answer'
 import type { MissClassification } from '../engine/answer'
 import { generatorFor } from '../engine/items/generators'
 import { makeRng } from '../engine/items/rng'
@@ -654,7 +654,7 @@ function Drill({
               {result?.kind === 'ack' && (
                 <p role="status" className="mt-4 text-center text-sm font-bold text-gold">
                   {result.nudge === 'unreduced'
-                    ? `That’s it — and ${session.item.answer.canonical} is the tidiest way to write it.`
+                    ? `That’s it — and ${answerText(session.item.answer)} is the tidiest way to write it.`
                     : ACKS[session.answered % ACKS.length]}
                 </p>
               )}
@@ -732,7 +732,7 @@ function Coaching({
 
         <p className="mt-3 text-base font-bold">
           It comes out at{' '}
-          <span className="text-xl font-black text-gold">{item.answer.canonical}</span>.
+          <span className="text-xl font-black text-gold">{answerText(item.answer)}</span>.
         </p>
 
         <p className="mt-4 text-[11px] font-bold tracking-[0.15em] text-white/40 uppercase">

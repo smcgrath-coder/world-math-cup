@@ -26,7 +26,7 @@
 
 import { expect } from 'vitest'
 import { makeRng } from './rng'
-import { checkAnswer } from '../answer'
+import { checkAnswer, canonicalOf } from '../answer'
 import type { Item, ItemGenerator } from './types'
 
 /**
@@ -135,20 +135,20 @@ function assertItemSound(
   // The key must be accepted by the same checker the child's typing goes
   // through. Anything else means the game can ask a question it will not
   // accept the answer to.
-  const self = checkAnswer(item.answer.canonical, item.answer)
-  expect(self.correct, `key ${item.answer.canonical} rejected by checker ${where}`).toBe(true)
+  const self = checkAnswer(canonicalOf(item.answer), item.answer)
+  expect(self.correct, `key ${canonicalOf(item.answer)} rejected by checker ${where}`).toBe(true)
 
   // The key must also be in lowest terms. `checkAnswer` accepts `14/16` for
   // `7/8` with an "unreduced" nudge, which is right for a child's typing and
   // wrong for a key: an unreduced key would fire that nudge against the very
   // answer it published as correct.
-  expect(self.nudge, `key ${item.answer.canonical} is not in lowest terms ${where}`).toBeUndefined()
+  expect(self.nudge, `key ${canonicalOf(item.answer)} is not in lowest terms ${where}`).toBeUndefined()
 
   // The independent recomputation. This is the check the whole file exists for.
   const independent = verify(item.params)
   expect(
     checkAnswer(independent, item.answer).correct,
-    `key ${item.answer.canonical} disagrees with independent ${independent} ` +
+    `key ${canonicalOf(item.answer)} disagrees with independent ${independent} ` +
       `${where}, params=${JSON.stringify(item.params)}`,
   ).toBe(true)
 

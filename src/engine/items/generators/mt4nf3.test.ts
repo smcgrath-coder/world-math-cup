@@ -12,6 +12,7 @@ import {
   WORD,
   mt4nf3,
 } from './mt4nf3'
+import { canonicalOf } from '../../answer'
 
 const ADD = 1
 
@@ -131,7 +132,7 @@ describe('MT.4.NF.3 add/subtract like denominators', () => {
     // Negative fractions are years away, and a negative answer here would be a
     // question about a topic he has not met, scored against him.
     for (const item of everyItem()) {
-      expect(R.parse(item.answer.canonical)!.n, item.prompt).toBeGreaterThanOrEqual(0)
+      expect(R.parse(canonicalOf(item.answer))!.n, item.prompt).toBeGreaterThanOrEqual(0)
     }
   })
 
@@ -281,7 +282,7 @@ describe('MT.4.NF.3 add/subtract like denominators', () => {
   it('never names a mistake that is the right answer', () => {
     for (const item of everyItem()) {
       expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
-      const answer = R.parse(item.answer.canonical)!
+      const answer = R.parse(canonicalOf(item.answer))!
       for (const m of item.misconceptions) {
         expect(R.parse(m.signature)!.equals(answer), `${m.id} on ${item.prompt}`).toBe(false)
       }

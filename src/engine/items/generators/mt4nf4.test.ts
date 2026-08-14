@@ -12,6 +12,7 @@ import {
   WORD,
   mt4nf4,
 } from './mt4nf4'
+import { canonicalOf } from '../../answer'
 
 const FRACTION_FIRST = 1
 
@@ -214,7 +215,7 @@ describe('MT.4.NF.4 multiplying a fraction by a whole number', () => {
 
   it('answers with a count on the two formats that ask for one', () => {
     for (const item of everyItem()) {
-      const value = R.parse(item.answer.canonical)!
+      const value = R.parse(canonicalOf(item.answer))!
       if ([UNIT_COUNT, MISSING_FACTOR].includes(item.params.format!)) {
         expect(value.isInteger(), item.prompt).toBe(true)
       }
@@ -273,7 +274,7 @@ describe('MT.4.NF.4 multiplying a fraction by a whole number', () => {
   it('never names a mistake that is the right answer', () => {
     for (const item of everyItem()) {
       expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
-      const answer = R.parse(item.answer.canonical)!
+      const answer = R.parse(canonicalOf(item.answer))!
       for (const m of item.misconceptions) {
         expect(R.parse(m.signature)!.equals(answer), `${m.id} on ${item.prompt}`).toBe(false)
       }

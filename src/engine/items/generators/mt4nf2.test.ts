@@ -14,6 +14,7 @@ import {
   WORD_MORE,
   mt4nf2,
 } from './mt4nf2'
+import { canonicalOf } from '../../answer'
 
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b)
@@ -226,9 +227,9 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       const { n1, d1, n2, d2 } = item.params as Record<string, number>
       if (item.params.format === COMMON_DENOMINATOR) {
-        expect(R.parse(item.answer.canonical)!.isInteger(), item.prompt).toBe(true)
+        expect(R.parse(canonicalOf(item.answer))!.isInteger(), item.prompt).toBe(true)
       } else {
-        expect([`${n1}/${d1}`, `${n2}/${d2}`], item.prompt).toContain(item.answer.canonical)
+        expect([`${n1}/${d1}`, `${n2}/${d2}`], item.prompt).toContain(canonicalOf(item.answer))
       }
     }
   })
@@ -298,7 +299,7 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       if (!TWO_FRACTION_FORMATS.includes(item.params.format!)) continue
       const { n1, d1, n2, d2 } = item.params as Record<string, number>
-      const correct = item.answer.canonical
+      const correct = canonicalOf(item.answer)
       const other = correct === `${n1}/${d1}` ? `${n2}/${d2}` : `${n1}/${d1}`
       expect(item.misconceptions, item.prompt).toHaveLength(1)
       expect(item.misconceptions[0]!.signature, item.prompt).toBe(other)
@@ -314,7 +315,7 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       if (![GREATER, WORD_MORE, CLOSER_TO_ONE].includes(item.params.format!)) continue
       const { n1, d1, d2 } = item.params as Record<string, number>
-      const loserIsFirst = item.answer.canonical !== `${n1}/${d1}`
+      const loserIsFirst = canonicalOf(item.answer) !== `${n1}/${d1}`
       const loserDen = loserIsFirst ? d1! : d2!
       const winnerDen = loserIsFirst ? d2! : d1!
       const id = item.misconceptions[0]!.id
@@ -338,7 +339,7 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       if (![GREATER, WORD_MORE].includes(item.params.format!)) continue
       const { n1, d1, n2, d2 } = item.params as Record<string, number>
-      const loserIsFirst = item.answer.canonical !== `${n1}/${d1}`
+      const loserIsFirst = canonicalOf(item.answer) !== `${n1}/${d1}`
       const loser = loserIsFirst ? [n1!, d1!] : [n2!, d2!]
       const winner = loserIsFirst ? [n2!, d2!] : [n1!, d1!]
       const bothBigger = loser[0]! > winner[0]! && loser[1]! > winner[1]!

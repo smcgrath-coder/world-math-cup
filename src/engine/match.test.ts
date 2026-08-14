@@ -28,6 +28,7 @@ import { PRESSURES, TARGET_SUCCESS } from './select'
 import type { Pressure } from './select'
 import { expectedScore } from './elo'
 import type { Opponent } from '../data/opponents'
+import { canonicalOf } from './answer'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -80,7 +81,7 @@ const answer = (s: MatchState, given: string, deps: MatchDeps, latencyMs = 1200)
 // ---------------------------------------------------------------------------
 // Answers of a known quality
 
-const right = (item: Item) => item.answer.canonical
+const right = (item: Item) => canonicalOf(item.answer)
 
 /**
  * A slip on a sound method, so `classifyMiss` reads it as `near`.
@@ -96,7 +97,7 @@ const right = (item: Item) => item.answer.canonical
  * get a one-twentieth gap, which the fraction rule still reads as a slip.
  */
 function nearMiss(item: Item): string {
-  const r = Rational.parse(item.answer.canonical)!
+  const r = Rational.parse(canonicalOf(item.answer))!
   if (r.isInteger() && Math.abs(r.n) >= 10) return String(r.n + 1)
   if (r.n === 0) return '1/20'
   return `${20 * r.n + r.d}/${20 * r.d}`
@@ -108,7 +109,7 @@ function nearMiss(item: Item): string {
  * attempt by attempt.
  */
 function wildMiss(item: Item): string {
-  const r = Rational.parse(item.answer.canonical)!
+  const r = Rational.parse(canonicalOf(item.answer))!
   return `${r.n + 1_000_000 * r.d}/${r.d}`
 }
 
@@ -1223,7 +1224,7 @@ describe('the log', () => {
     for (let i = 0; i < 40 && s.phase !== 'fulltime'; i++) {
       const item = s.currentItem
       const signature = item?.misconceptions[0]?.signature
-      if (item !== null && signature !== undefined && signature !== item.answer.canonical) {
+      if (item !== null && signature !== undefined && signature !== canonicalOf(item.answer)) {
         const next = answer(s, signature, deps)
         if (next.log.length > s.log.length && last(next.log).correct === false) {
           expect(last(next.log).misconceptionId).toBe(item.misconceptions[0]!.id)

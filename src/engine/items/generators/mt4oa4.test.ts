@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { ROW_CONTEXTS, mt4oa4 } from './mt4oa4'
+import { canonicalOf } from '../../answer'
 
 const TIMES = '×'
 
@@ -242,7 +243,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
       expect(primes.length, `d=${d} never asks about a prime`).toBeGreaterThan(0)
       expect(smallest.length - primes.length, `d=${d} only asks about primes`).toBeGreaterThan(0)
       for (const item of primes) {
-        expect(item.answer.canonical, item.prompt).toBe(String(item.params.n!))
+        expect(canonicalOf(item.answer), item.prompt).toBe(String(item.params.n!))
       }
     }
   })
@@ -254,8 +255,8 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     expect(asked.length).toBeGreaterThan(0)
     for (const item of asked) {
       expect(isPrime(item.params.n!), item.prompt).toBe(false)
-      expect(Number(item.answer.canonical), item.prompt).toBeGreaterThan(1)
-      expect(Number(item.answer.canonical), item.prompt).toBeLessThan(item.params.n!)
+      expect(Number(canonicalOf(item.answer)), item.prompt).toBeGreaterThan(1)
+      expect(Number(canonicalOf(item.answer)), item.prompt).toBeLessThan(item.params.n!)
     }
   })
 
@@ -269,7 +270,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
       const { n, by } = item.params as Record<string, number>
       const [, remainder] = parts(n!, by!)
       expect(remainder, item.prompt).toBeGreaterThan(0)
-      const answer = Number(item.answer.canonical)
+      const answer = Number(canonicalOf(item.answer))
       expect(answer % by!, item.prompt).toBe(0)
       expect(answer, item.prompt).toBeGreaterThan(n!)
       expect(answer - by!, item.prompt).toBeLessThan(n!)
@@ -306,7 +307,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     let factors = 0
     for (const item of everyItem()) {
       const format = item.params.format!
-      const answer = Number(item.answer.canonical)
+      const answer = Number(canonicalOf(item.answer))
       if (format === PAIRS) {
         const m = item.misconceptions.find((x) => x.id === 'counted-factors-not-pairs')
         expect(m, item.prompt).toBeDefined()
@@ -354,7 +355,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     for (const item of everyItem()) {
       expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
       for (const m of item.misconceptions) {
-        expect(m.signature, item.prompt).not.toBe(item.answer.canonical)
+        expect(m.signature, item.prompt).not.toBe(canonicalOf(item.answer))
       }
     }
   })
@@ -370,7 +371,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
   it('ends every working on the number the question asked for', () => {
     for (const item of everyItem()) {
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-        item.answer.canonical,
+        canonicalOf(item.answer),
       )
     }
   })

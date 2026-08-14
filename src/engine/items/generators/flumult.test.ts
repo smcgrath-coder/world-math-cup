@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { flumult } from './flumult'
+import { canonicalOf } from '../../answer'
 
 const TIMES = '×'
 
@@ -151,7 +152,7 @@ describe('FLU.MULT multiplication facts', () => {
     for (const item of everyItem(1, 80)) {
       expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
       for (const m of item.misconceptions) {
-        expect(m.signature, `${m.id} on "${item.prompt}"`).not.toBe(item.answer.canonical)
+        expect(m.signature, `${m.id} on "${item.prompt}"`).not.toBe(canonicalOf(item.answer))
         expect(Number(m.signature), `${m.id} on "${item.prompt}"`).toBeGreaterThanOrEqual(0)
       }
     }
@@ -195,7 +196,7 @@ describe('FLU.MULT multiplication facts', () => {
     for (const item of everyItem(2, 40)) {
       const { a, b } = item.params as Record<string, number>
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toBe(
-        `So ${a} ${TIMES} ${b} = ${item.answer.canonical}.`,
+        `So ${a} ${TIMES} ${b} = ${canonicalOf(item.answer)}.`,
       )
     }
   })

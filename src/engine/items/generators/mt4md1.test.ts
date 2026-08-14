@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { UNITS, mt4md1 } from './mt4md1'
+import { canonicalOf } from '../../answer'
+import type { Item } from '../types'
 
 const TIMES = '×'
 const EASIEST = 10
@@ -104,7 +106,7 @@ describe('MT.4.MD.1 units within one system', () => {
     // the answer stays a whole number.
     for (let d = EASIEST; d <= HARDEST; d += 3) {
       for (const item of itemsAt(d, 40)) {
-        expect(Number(item.answer.canonical), item.prompt).toBeGreaterThan(item.params.quantity!)
+        expect(Number(canonicalOf(item.answer)), item.prompt).toBeGreaterThan(item.params.quantity!)
       }
     }
   })
@@ -114,7 +116,7 @@ describe('MT.4.MD.1 units within one system', () => {
     // itself must carry none — a key of "300 cm" could never be matched.
     for (let d = EASIEST; d <= HARDEST; d += 3) {
       for (const item of itemsAt(d, 40)) {
-        expect(item.answer.canonical, item.prompt).toMatch(/^\d+$/)
+        expect(canonicalOf(item.answer), item.prompt).toMatch(/^\d+$/)
       }
     }
   })
@@ -152,8 +154,8 @@ describe('MT.4.MD.1 units within one system', () => {
   })
 
   it('starts on the powers of ten and reaches the awkward factors later', () => {
-    const factorOf = (item: { params: Record<string, number>; answer: { canonical: string } }): number =>
-      Number(item.answer.canonical) / item.params.quantity!
+    const factorOf = (item: Item): number =>
+      Number(canonicalOf(item.answer)) / item.params.quantity!
 
     for (const item of itemsAt(EASIEST)) {
       expect([10, 100, 1000], item.prompt).toContain(factorOf(item))
@@ -171,7 +173,7 @@ describe('MT.4.MD.1 units within one system', () => {
     for (let d = EASIEST; d <= HARDEST; d += 3) {
       for (const item of itemsAt(d, 40)) {
         const quantity = item.params.quantity!
-        const factor = Number(item.answer.canonical) / quantity
+        const factor = Number(canonicalOf(item.answer)) / quantity
         if (![100, 1000].includes(factor)) continue
         const m = item.misconceptions.find((x) => x.id === 'one-power-short')
         expect(m, `d=${d} ${item.prompt}`).toBeDefined()
@@ -201,14 +203,14 @@ describe('MT.4.MD.1 units within one system', () => {
       for (const item of itemsAt(d, 30)) {
         const from = UNITS[item.params.from!]!
         const to = UNITS[item.params.to!]!
-        const factor = Number(item.answer.canonical) / item.params.quantity!
+        const factor = Number(canonicalOf(item.answer)) / item.params.quantity!
         const steps = item.workedSteps.join(' ')
         expect(steps, item.prompt).toContain(`1 ${from.one} is ${amount(factor, to)}`)
         expect(steps, item.prompt).toContain(
-          `${item.params.quantity} ${TIMES} ${factor} = ${item.answer.canonical}`,
+          `${item.params.quantity} ${TIMES} ${factor} = ${canonicalOf(item.answer)}`,
         )
         expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-          item.answer.canonical,
+          canonicalOf(item.answer),
         )
       }
     }

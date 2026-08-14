@@ -7,6 +7,7 @@ import type { Item } from '../engine/items/types'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft } from '../store/storage'
 import type { Attempt } from '../store/types'
+import { canonicalOf } from '../engine/answer'
 
 const NOW = Date.UTC(2026, 7, 10, 18, 0, 0)
 
@@ -78,7 +79,7 @@ describe('FilmRoom', () => {
     const two = play(itemFor('FLU.MULT', 60, 3), '-1')
     // Another match, and a right answer in this one. Neither belongs here.
     play(itemFor('MT.4.NF.1', 30, 5), '-1', { matchId: 'm0' })
-    play(itemFor('MT.4.NF.1', 30, 7), one.item.answer.canonical, { correct: true })
+    play(itemFor('MT.4.NF.1', 30, 7), canonicalOf(one.item.answer), { correct: true })
 
     render(<FilmRoom matchId="m1" opponentName="Brazil" questions={questionsOf(one, two)} />)
 
@@ -101,7 +102,7 @@ describe('FilmRoom', () => {
     for (const { item } of [one, two]) {
       expect(item.workedSteps.length).toBeGreaterThan(0)
       for (const step of item.workedSteps) expect(said()).toContain(step)
-      expect(said()).toContain(item.answer.canonical)
+      expect(said()).toContain(canonicalOf(item.answer))
     }
     expect(screen.getAllByText(/how it goes/i)).toHaveLength(2)
   })
@@ -122,7 +123,7 @@ describe('FilmRoom', () => {
   it('calls a near miss a save and an off-target one nothing at all', () => {
     // 7 × 8 = 56. One out is a save; 3 never troubled the goal.
     const item = itemFor('FLU.MULT', 80, 3)
-    const answer = Number(item.answer.canonical)
+    const answer = Number(canonicalOf(item.answer))
     const near = String(answer + 1)
     expect(item.misconceptions.some((m) => m.signature === near)).toBe(false)
 
@@ -215,7 +216,7 @@ describe('FilmRoom', () => {
     const item = itemFor('MT.4.NF.1', 30)
     const known = item.misconceptions[0]!
     const named = play(item, known.signature, { misconceptionId: known.id })
-    const near = play(itemFor('FLU.MULT', 80, 3), String(Number(itemFor('FLU.MULT', 80, 3).answer.canonical) + 1))
+    const near = play(itemFor('FLU.MULT', 80, 3), String(Number(canonicalOf(itemFor('FLU.MULT', 80, 3).answer)) + 1))
     const off = play(itemFor('MT.4.NBT.5', 50, 4), '1')
     const late = play(itemFor('MT.4.NF.1', 20, 9), '', { context: 'tackleback' })
 

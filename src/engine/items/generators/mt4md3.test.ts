@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { CONTEXTS, mt4md3 } from './mt4md3'
+import { canonicalOf } from '../../answer'
 
 const TIMES = '×'
 
@@ -171,7 +172,7 @@ describe('MT.4.MD.3 area and perimeter of rectangles', () => {
           expect(steps, item.prompt).toContain(`${w} + ${h} + ${w} + ${h} = ${2 * (w! + h!)}`)
         }
         expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-          item.answer.canonical,
+          canonicalOf(item.answer),
         )
       }
     }

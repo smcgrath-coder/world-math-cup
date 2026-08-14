@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { checkAnswer, normaliseInput } from './answer'
+import {
+  answerText,
+  canonicalOf,
+  checkAnswer,
+  classifyMiss,
+  guessFloor,
+  normaliseInput,
+  trueFalse,
+} from './answer'
 import { Rational } from './rational'
 
 const num = (canonical: string) => ({ kind: 'rational' as const, canonical })
@@ -289,5 +297,126 @@ describe('checkAnswer never throws on user input', () => {
 describe('checkAnswer spec validation', () => {
   it('throws on a bad spec, because that is a programmer error not a child error', () => {
     expect(() => checkAnswer('7/8', num('not-a-number'))).toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Choices
+
+const pick = (options: string[], correct: number) => ({
+  kind: 'choice' as const,
+  options,
+  correct,
+})
+
+describe('checkAnswer on a choice', () => {
+  it('accepts the right option and rejects the others', () => {
+    const spec = pick(['>', '=', '<'], 0)
+    expect(checkAnswer('>', spec).correct).toBe(true)
+    expect(checkAnswer('=', spec).correct).toBe(false)
+    expect(checkAnswer('<', spec).correct).toBe(false)
+  })
+
+  it('tolerates surrounding whitespace and nothing else', () => {
+    const spec = pick(['True', 'False'], 0)
+    expect(checkAnswer('  True  ', spec).correct).toBe(true)
+    // No normalisation: the input hands back a string it was given, so anything
+    // else is a programmer error rather than a child's typo.
+    expect(checkAnswer('true', spec).unparseable).toBe(true)
+    expect(checkAnswer('0', spec).unparseable).toBe(true)
+  })
+
+  it('never reports a nudge, because there is no tidier way to write an option', () => {
+    expect(checkAnswer('True', pick(['True', 'False'], 0)).nudge).toBeUndefined()
+  })
+
+  it('throws when the key points outside the options', () => {
+    // Loud, like a malformed rational spec. Silently marking a right answer
+    // wrong is the one failure this whole engine is built to prevent.
+    expect(() => checkAnswer('True', pick(['True', 'False'], 2))).toThrow()
+    expect(() => checkAnswer('True', pick(['True', 'False'], -1))).toThrow()
+  })
+
+  it('grades a numeric-looking option as text, not as a number', () => {
+    // '6' and '6/1' are the same rational and must not be the same option.
+    const spec = pick(['6', '6/1'], 0)
+    expect(checkAnswer('6', spec).correct).toBe(true)
+    expect(checkAnswer('6/1', spec).correct).toBe(false)
+  })
+})
+
+describe('trueFalse', () => {
+  it('always puts True first, so the pair never swaps under him', () => {
+    expect(trueFalse(true).kind).toBe('choice')
+    for (const isTrue of [true, false]) {
+      const spec = trueFalse(isTrue)
+      expect(spec.kind === 'choice' && spec.options).toEqual(['True', 'False'])
+    }
+  })
+
+  it('grades both directions', () => {
+    expect(checkAnswer('True', trueFalse(true)).correct).toBe(true)
+    expect(checkAnswer('False', trueFalse(true)).correct).toBe(false)
+    expect(checkAnswer('False', trueFalse(false)).correct).toBe(true)
+    expect(checkAnswer('True', trueFalse(false)).correct).toBe(false)
+  })
+})
+
+describe('guessFloor', () => {
+  it('is nothing for a typed answer — you cannot guess your way to 4287', () => {
+    expect(guessFloor(num('4287'))).toBe(0)
+  })
+
+  it('is one over the options for a choice', () => {
+    expect(guessFloor(trueFalse(true))).toBe(0.5)
+    expect(guessFloor(pick(['>', '=', '<'], 0))).toBeCloseTo(1 / 3, 10)
+    expect(guessFloor(pick(['a', 'b', 'c', 'd'], 0))).toBe(0.25)
+  })
+})
+
+describe('classifyMiss on a choice', () => {
+  it('names the distractor he picked', () => {
+    const miss = classifyMiss('<', pick(['>', '=', '<'], 0), [
+      { id: 'reversed', signature: '<' },
+    ])
+    expect(miss.kind).toBe('misconception')
+    expect(miss.misconceptionId).toBe('reversed')
+  })
+
+  it('reports no distance, because there is no neighbourhood on a set of options', () => {
+    const miss = classifyMiss('False', trueFalse(true))
+    expect(miss.kind).toBe('off')
+    expect(miss.relativeError).toBeUndefined()
+  })
+
+  it('never says near, so the keeper never saves a guess', () => {
+    // A save is a claim about how close the method was. Picking the other of two
+    // buttons says nothing about method, and dressing it up as a near miss would
+    // be flattery the rest of this engine refuses to offer.
+    for (const given of ['True', 'False', '>', 'nonsense']) {
+      expect(classifyMiss(given, pick(['>', '=', '<'], 1)).kind).not.toBe('near')
+    }
+  })
+
+  it('does not crash on an option it has never seen', () => {
+    expect(classifyMiss('whatever', trueFalse(true)).kind).toBe('off')
+  })
+})
+
+describe('answerText', () => {
+  it('reads out whichever kind it is given', () => {
+    expect(answerText(num('7/8'))).toBe('7/8')
+    expect(answerText(pick(['>', '=', '<'], 2))).toBe('<')
+    expect(answerText(trueFalse(false))).toBe('False')
+  })
+})
+
+describe('canonicalOf', () => {
+  it('hands back the number', () => {
+    expect(canonicalOf(num('42'))).toBe('42')
+  })
+
+  it('throws on a choice rather than inventing one', () => {
+    expect(() => canonicalOf(trueFalse(true))).toThrow(/choice/)
   })
 })

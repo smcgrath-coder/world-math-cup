@@ -1096,3 +1096,56 @@ describe('performance', () => {
     expect(plain(deriveRatings(shuffle(log), now))).toEqual(plain(deriveRatings(log, now)))
   })
 })
+
+describe('choices in the log', () => {
+  const run = (n: number, choices?: number): Attempt[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `c-${String(i).padStart(3, '0')}`,
+      at: 1_000 + i * 1_000,
+      standardId: 'FLU.MULT',
+      difficulty: 50,
+      params: {},
+      given: 'x',
+      correct: true,
+      latencyMs: 4000,
+      context: 'training' as const,
+      ...(choices === undefined ? {} : { choices }),
+    }))
+
+  const NOW = 1_000 + 40 * 1_000
+  const ratingOf = (log: Attempt[]) => deriveRatings(log, NOW).get('FLU.MULT')!.rating
+
+  it('rates a run of choices below the same run of typed answers', () => {
+    // Measured: 68.94 typed, 65.98 four-option, 62.21 true/false over 30 right
+    // answers at difficulty 50. Ordered, and none of them pinned at a ceiling.
+    const typed = ratingOf(run(30))
+    const four = ratingOf(run(30, 4))
+    const coin = ratingOf(run(30, 2))
+
+    expect(typed).toBeGreaterThan(four)
+    expect(four).toBeGreaterThan(coin)
+    expect(typed).toBeLessThan(99)
+  })
+
+  it('leaves an attempt with no choices field exactly where it was', () => {
+    // The compatibility guarantee. Every attempt in Rion's save predates this
+    // and must derive to the same number it did before.
+    expect(ratingOf(run(20))).toBe(ratingOf(run(20, undefined)))
+  })
+
+  it('ignores a choices count that cannot be real', () => {
+    // `floorFor`'s rails, from the outside. One option would make the expected
+    // score 1 and every answer a disappointment; zero divides by zero.
+    const sane = ratingOf(run(20))
+    for (const bad of [1, 0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(ratingOf(run(20, bad)), `choices ${bad}`).toBe(sane)
+    }
+  })
+
+  it('still floors and never returns a non-finite rating', () => {
+    const wild = run(10, 2).map((a, i) => ({ ...a, correct: i % 2 === 0 }))
+    const rating = ratingOf(wild)
+    expect(Number.isFinite(rating)).toBe(true)
+    expect(rating).toBeGreaterThanOrEqual(RATING_FLOOR)
+  })
+})

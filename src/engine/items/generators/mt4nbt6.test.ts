@@ -11,6 +11,7 @@ import {
   WORD_LEFTOVER,
   mt4nbt6,
 } from './mt4nbt6'
+import { canonicalOf } from '../../answer'
 
 const DIVIDE = '÷'
 
@@ -189,9 +190,9 @@ describe('MT.4.NBT.6 whole-number quotients and remainders', () => {
         const [quotient, remainder] = parts(item.params.dividend!, item.params.divisor!)
         const format = item.params.format!
         if (GROUP_FORMATS.includes(format)) {
-          expect(item.answer.canonical, item.prompt).toBe(String(quotient))
+          expect(canonicalOf(item.answer), item.prompt).toBe(String(quotient))
         } else if (LEFTOVER_FORMATS.includes(format)) {
-          expect(item.answer.canonical, item.prompt).toBe(String(remainder))
+          expect(canonicalOf(item.answer), item.prompt).toBe(String(remainder))
         }
       }
     }
@@ -256,7 +257,7 @@ describe('MT.4.NBT.6 whole-number quotients and remainders', () => {
       const [quotient, remainder] = parts(dividend!, divisor!)
       let built = remainder
       for (let i = 0; i < quotient; i++) built += divisor!
-      expect(String(built), item.prompt).toBe(item.answer.canonical)
+      expect(String(built), item.prompt).toBe(canonicalOf(item.answer))
       expect(item.promptWithSlot, item.prompt).toBe(
         `{} ${DIVIDE} ${divisor} = ${quotient} remainder ${remainder}`,
       )
@@ -268,7 +269,7 @@ describe('MT.4.NBT.6 whole-number quotients and remainders', () => {
       if (item.params.format !== BIGGEST_FIT) continue
       const { dividend, divisor } = item.params as Record<string, number>
       const [, remainder] = parts(dividend!, divisor!)
-      const answer = Number(item.answer.canonical)
+      const answer = Number(canonicalOf(item.answer))
       // A multiple of the divisor, no bigger than the dividend, and the next one
       // up would overshoot. Those three together pin it without dividing.
       expect(answer % divisor!, item.prompt).toBe(0)
@@ -368,7 +369,7 @@ describe('MT.4.NBT.6 whole-number quotients and remainders', () => {
         const steps = item.workedSteps.join(' ')
         expect(steps, item.prompt).toContain(`${quotient} × ${divisor} = ${quotient * divisor!}`)
         expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-          item.answer.canonical,
+          canonicalOf(item.answer),
         )
       }
     }

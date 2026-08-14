@@ -194,3 +194,46 @@ describe('updateRating invariants', () => {
     }
   })
 })
+
+describe('correcting for guessing', () => {
+  it('earns less for a lucky true/false than for a typed answer', () => {
+    const typed = updateRating(50, 50, true, K_MATCH, 0)
+    const coin = updateRating(50, 50, true, K_MATCH, 0.5)
+    expect(coin - 50).toBeLessThan(typed - 50)
+    // Half the options, half the credit: at an even match the expected score
+    // goes from 0.5 to 0.75, so the gain halves exactly.
+    expect(coin - 50).toBeCloseTo((typed - 50) / 2, 10)
+  })
+
+  it('costs more to miss a question chance would have got', () => {
+    const typed = updateRating(50, 50, false, K_MATCH, 0)
+    const coin = updateRating(50, 50, false, K_MATCH, 0.5)
+    expect(coin).toBeLessThan(typed)
+  })
+
+  it('scales with the number of options', () => {
+    const gain = (floor: number) => updateRating(50, 50, true, K_MATCH, floor) - 50
+    expect(gain(0)).toBeGreaterThan(gain(1 / 4))
+    expect(gain(1 / 4)).toBeGreaterThan(gain(1 / 3))
+    expect(gain(1 / 3)).toBeGreaterThan(gain(1 / 2))
+  })
+
+  it('defaults to no correction, so every existing caller is unchanged', () => {
+    expect(updateRating(50, 40, true, K_MATCH)).toBe(updateRating(50, 40, true, K_MATCH, 0))
+    expect(updateRating(50, 40, false, K_TRAINING)).toBe(
+      updateRating(50, 40, false, K_TRAINING, 0),
+    )
+  })
+
+  it('cannot be ground for rating by guessing', () => {
+    // Two hundred true/false items at an even match, all guessed right. The
+    // point of the correction: luck must not build a card.
+    let lucky = 50
+    let earned = 50
+    for (let i = 0; i < 200; i++) {
+      lucky = updateRating(lucky, 50, true, K_TRAINING, 0.5)
+      earned = updateRating(earned, 50, true, K_TRAINING, 0)
+    }
+    expect(lucky).toBeLessThan(earned)
+  })
+})

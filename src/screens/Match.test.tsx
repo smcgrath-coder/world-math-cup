@@ -15,6 +15,7 @@ import { QUESTIONS_PER_MATCH, reduce, startMatch } from '../engine/match'
 import type { MatchDeps, MatchEvent, MatchState, Stakes } from '../engine/match'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { Attempt, ShotChoice } from '../store/types'
+import { canonicalOf } from '../engine/answer'
 
 const SEED = 20_260
 /** Tier 4, rating 56: the gentlest side on the roster. */
@@ -83,7 +84,7 @@ function type(o: Oracle, given: string): void {
   mirror(o, { type: 'answer', given, latencyMs: 1200 })
 }
 
-const answerRight = (o: Oracle): void => type(o, o.state.currentItem!.answer.canonical)
+const answerRight = (o: Oracle): void => type(o, canonicalOf(o.state.currentItem!.answer))
 const answerWrong = (o: Oracle): void => type(o, ALWAYS_WRONG)
 
 function press(name: RegExp): void {
@@ -277,7 +278,7 @@ describe('Match', () => {
     expect(o.state.phase).toBe('feedback')
     const item = o.state.currentItem!
     for (const step of item.workedSteps) expect(said()).toContain(step)
-    expect(said()).toContain(item.answer.canonical)
+    expect(said()).toContain(canonicalOf(item.answer))
 
     expect(said()).not.toMatch(/\bwrong\b|\bincorrect\b|\bfail(ed|ure)?\b/i)
     expect(said()).not.toMatch(/[✗✘]/)
@@ -394,7 +395,7 @@ describe('Match', () => {
 
   it('writes every attempt by the whistle', () => {
     const o = play()
-    playOut(o, (s) => s.state.currentItem!.answer.canonical)
+    playOut(o, (s) => canonicalOf(s.state.currentItem!.answer))
 
     expect(o.state.phase).toBe('fulltime')
     expect(said()).toMatch(/full time/i)
@@ -481,7 +482,7 @@ describe('Match', () => {
 
   it('ends on a scoreline he can read out', () => {
     const o = play()
-    playOut(o, (s) => s.state.currentItem!.answer.canonical)
+    playOut(o, (s) => canonicalOf(s.state.currentItem!.answer))
 
     expect(said()).toMatch(new RegExp(`${o.state.score[0]}–${o.state.score[1]}`))
     expect(screen.getByRole('button', { name: /off the pitch/i })).toBeInTheDocument()
@@ -505,7 +506,7 @@ describe('Match', () => {
     render(<Match opponent={opponent} stakes="friendly" seed={SEED} matchId="m1" onDone={handed} />)
     const o = open(opponent, 'friendly', 'm1')
 
-    playOut(o, (s) => (s.state.questionsAsked % 3 === 0 ? ALWAYS_WRONG : s.state.currentItem!.answer.canonical))
+    playOut(o, (s) => (s.state.questionsAsked % 3 === 0 ? ALWAYS_WRONG : canonicalOf(s.state.currentItem!.answer)))
     press(/off the pitch/i)
 
     expect(handed).toHaveBeenCalledTimes(1)

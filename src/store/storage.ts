@@ -239,6 +239,23 @@ export function validateAttempt(value: unknown): Attempt | null {
   if (isFilledString(value.misconceptionId)) attempt.misconceptionId = value.misconceptionId
   if (isFilledString(value.matchId)) attempt.matchId = value.matchId
 
+  /*
+   * `choices` does affect the mathematics, so by the rule above a bad one might
+   * be expected to cost the whole attempt. It is normalised instead, for two
+   * reasons. Its *absence* is meaningful rather than missing — every attempt
+   * written before choices existed was a typed answer and scores correctly with
+   * no floor at all — so there is no way to tell an old attempt from a corrupt
+   * one. And dropping the attempt throws away all of its rating evidence to fix
+   * a field that, at worst, scores one answer without its guess correction. The
+   * smaller distortion wins.
+   *
+   * Two is the minimum a real choice can have. Anything below it would give
+   * `floorFor` a floor of 1 or a division by zero.
+   */
+  if (isFiniteNumber(value.choices) && Number.isInteger(value.choices) && value.choices >= 2) {
+    attempt.choices = value.choices
+  }
+
   return attempt
 }
 

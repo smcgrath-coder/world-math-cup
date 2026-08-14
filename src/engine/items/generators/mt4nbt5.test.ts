@@ -14,6 +14,7 @@ import {
   WORD_ROWS,
   mt4nbt5,
 } from './mt4nbt5'
+import { canonicalOf } from '../../answer'
 
 const TIMES = '×'
 
@@ -338,8 +339,8 @@ describe('MT.4.NBT.5 multiplying multi-digit whole numbers', () => {
     // Both blanks have to occur, or half the format is dead code.
     expect(asked.filter((i) => i.params.slot === SLOT_FIRST).length).toBeGreaterThan(0)
     expect(asked.filter((i) => i.params.slot !== SLOT_FIRST).length).toBeGreaterThan(0)
-    expect(asked.filter((i) => Number(i.answer.canonical) < 10).length).toBeGreaterThan(0)
-    expect(asked.filter((i) => Number(i.answer.canonical) >= 10).length).toBeGreaterThan(0)
+    expect(asked.filter((i) => Number(canonicalOf(i.answer)) < 10).length).toBeGreaterThan(0)
+    expect(asked.filter((i) => Number(canonicalOf(i.answer)) >= 10).length).toBeGreaterThan(0)
   })
 
   it('puts the answer box inside the expression when the answer sits inside one', () => {
@@ -492,7 +493,7 @@ describe('MT.4.NBT.5 multiplying multi-digit whole numbers', () => {
   it('ends every working on the number the question asked for', () => {
     for (const item of everyItem()) {
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-        item.answer.canonical,
+        canonicalOf(item.answer),
       )
     }
   })

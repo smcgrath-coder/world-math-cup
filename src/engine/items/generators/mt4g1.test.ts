@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { SHAPES, mt4g1 } from './mt4g1'
+import { canonicalOf } from '../../answer'
 
 /**
  * Redeclared rather than imported: a mismatch with the generator is a bug this
@@ -225,7 +226,7 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
     // answer is always some. Every question has to be able to come back empty.
     const zeros = new Set<number>()
     for (const item of everyItem(1, 60)) {
-      if (item.answer.canonical === '0') zeros.add(item.params.ask!)
+      if (canonicalOf(item.answer) === '0') zeros.add(item.params.ask!)
     }
     expect([...zeros].sort(), 'some question can never answer zero').toEqual([
       RIGHT,
@@ -237,7 +238,7 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
   it('never names a mistake that is the right answer, zero included', () => {
     for (const item of everyItem(1, 60)) {
       for (const m of item.misconceptions) {
-        expect(m.signature, `${m.id} on "${item.prompt}"`).not.toBe(item.answer.canonical)
+        expect(m.signature, `${m.id} on "${item.prompt}"`).not.toBe(canonicalOf(item.answer))
       }
     }
   })
@@ -348,7 +349,7 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
   it('finishes the working with the number he has to type', () => {
     for (const item of everyItem(2, 30)) {
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-        `The answer is ${item.answer.canonical}.`,
+        `The answer is ${canonicalOf(item.answer)}.`,
       )
     }
   })

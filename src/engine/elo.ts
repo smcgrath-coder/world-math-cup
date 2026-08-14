@@ -77,7 +77,26 @@ export function updateRating(
   difficulty: number,
   correct: boolean,
   k: number,
+  /**
+   * How often this item is answered right by someone who knows nothing: 0 for a
+   * typed answer, `1/options` for a choice. See `guessFloor` in `answer.ts`.
+   *
+   * Without this a true/false is worth as much as a four-digit product, and the
+   * card starts claiming knowledge that was a coin landing the right way up.
+   * With it, the expected score is lifted to meet the floor — a child who knows
+   * nothing is *expected* to score 0.5 on a true/false — so a correct pick earns
+   * roughly half what a typed answer would and a wrong one costs more, because
+   * it was a question he was expected to get.
+   *
+   * This is the standard correction for guessing, and it is applied here rather
+   * than in item selection on purpose: `difficultyForSuccess` targets 75%
+   * success *on merit*, and correcting there would serve items he only knows
+   * half the time. A coin flip is the calibration this game rejected at the
+   * start.
+   */
+  guessFloor = 0,
 ): number {
-  const e = expectedScore(rating, difficulty)
+  const raw = expectedScore(rating, difficulty)
+  const e = guessFloor + (1 - guessFloor) * raw
   return clamp(rating + k * ((correct ? 1 : 0) - e))
 }

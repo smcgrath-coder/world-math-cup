@@ -28,6 +28,17 @@ export interface Attempt {
   matchId?: string
   /** Set when this attempt was a shot. Drives the courage track. */
   shot?: ShotChoice
+  /**
+   * How many options this question offered, when it was a choice rather than a
+   * typed answer.
+   *
+   * Recorded because ratings are derived from this log and nothing is stored as
+   * a total: `deriveRatings` needs to know a true/false was right half the time
+   * by luck, and the item itself is long gone by then. Optional, so every
+   * attempt written before choices existed stays valid and scores as a typed
+   * answer, which is exactly what it was.
+   */
+  choices?: number
 }
 
 export interface StandardRating {

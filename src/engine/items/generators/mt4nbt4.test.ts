@@ -15,6 +15,7 @@ import {
   WORD_TOTAL,
   mt4nbt4,
 } from './mt4nbt4'
+import { canonicalOf } from '../../answer'
 
 const ADD = 1
 const MINUS = '−'
@@ -513,7 +514,7 @@ describe('MT.4.NBT.4 adding and subtracting multi-digit whole numbers', () => {
     // of the shown numbers the question would answer itself.
     for (const item of everyItem()) {
       if (!SLOT_FORMATS.includes(item.params.format!)) continue
-      const shown = (item.prompt.match(/\d+/g) ?? []).filter((n) => n === item.answer.canonical)
+      const shown = (item.prompt.match(/\d+/g) ?? []).filter((n) => n === canonicalOf(item.answer))
       expect(shown, item.prompt).toHaveLength(0)
     }
   })
@@ -525,7 +526,7 @@ describe('MT.4.NBT.4 adding and subtracting multi-digit whole numbers', () => {
       expect(steps, item.prompt).toContain('tens')
       // The last step always states the finished answer, so he can check himself.
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
-        item.answer.canonical,
+        canonicalOf(item.answer),
       )
     }
   })

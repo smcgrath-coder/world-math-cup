@@ -57,6 +57,7 @@ import type { Attempt, ShotChoice } from '../store/types'
 import { useCountry, useSettings } from '../store/useGameState'
 import type { Opponent } from '../data/opponents'
 import type { CardStat } from '../curriculum/standards.generated'
+import { answerText } from '../engine/answer'
 
 /**
  * How long an ordinary beat between questions runs.
@@ -721,7 +722,7 @@ function Worked({
         <p className="mt-1.5 text-[15px] leading-relaxed text-white/85">{line.body}</p>
 
         <p className="mt-3 text-base font-bold">
-          It comes out at <span className="text-xl font-black text-gold">{item.answer.canonical}</span>.
+          It comes out at <span className="text-xl font-black text-gold">{answerText(item.answer)}</span>.
         </p>
 
         <p className="mt-4 text-[11px] font-bold tracking-[0.15em] text-white/40 uppercase">

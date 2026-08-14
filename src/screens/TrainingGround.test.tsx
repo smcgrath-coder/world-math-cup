@@ -10,6 +10,7 @@ import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft } from '../store/storage'
 import type { Attempt } from '../store/types'
 import type { CardStat } from '../curriculum/standards.generated'
+import { canonicalOf } from '../engine/answer'
 
 const SEED = 31_415
 
@@ -279,8 +280,8 @@ describe('TrainingGround', () => {
       const first = oracle.item
       expect(screen.getByText(first.prompt)).toBeInTheDocument()
 
-      submit(first.answer.canonical)
-      oracle.record(first.answer.canonical, true)
+      submit(canonicalOf(first.answer))
+      oracle.record(canonicalOf(first.answer), true)
 
       // Straight on to the next one. No worked steps, nothing to tap through.
       expect(nextOne()).toBeNull()
@@ -298,7 +299,7 @@ describe('TrainingGround', () => {
 
       for (const step of item.workedSteps) expect(screen.getByText(step)).toBeInTheDocument()
       // The answer, said plainly. Training is where you find out.
-      expect(said()).toContain(item.answer.canonical)
+      expect(said()).toContain(canonicalOf(item.answer))
       // Still here until he says he is done reading.
       expect(nextOne()).toBeInTheDocument()
       expect(screen.queryByRole('textbox')).toBeNull()
@@ -362,7 +363,7 @@ describe('TrainingGround', () => {
 
       const opened = statValue()
       for (let i = 0; i < 14; i++) {
-        const given = oracle.item.answer.canonical
+        const given = canonicalOf(oracle.item.answer)
         submit(given)
         oracle.record(given, true)
       }
