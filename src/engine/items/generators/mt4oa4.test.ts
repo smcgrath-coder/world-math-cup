@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { ROW_CONTEXTS, mt4oa4 } from './mt4oa4'
-import { canonicalOf } from '../../answer'
+import { answerText, canonicalOf } from '../../answer'
 
 const TIMES = '×'
 
@@ -14,6 +14,7 @@ const FACTOR_COUNT = 3
 const NEXT_MULTIPLE = 4
 const BIGGEST_PARTNER = 5
 const WORD_ROWS = 6
+const IS_MULTIPLE = 7
 
 const EASIEST = 15
 const HARDEST = 90
@@ -85,6 +86,13 @@ function factorsAnswer(p: Record<string, number>): string {
   expect(quotient * by + remainder, `${n} does not rebuild from its parts`).toBe(n)
   expect(remainder, `${n} ÷ ${by} has a negative remainder`).toBeGreaterThanOrEqual(0)
   expect(remainder, `${n} ÷ ${by} has a remainder as big as the divisor`).toBeLessThan(by)
+
+  // For a choice, the independent answer is the correct option's text. Derived
+  // from the repeated subtraction above and never from the generator: a multiple
+  // is a number you land on counting up, so it is a multiple exactly when
+  // nothing is left over.
+  if (p.format === IS_MULTIPLE) return remainder === 0 ? 'True' : 'False'
+
   return String(remainder)
 }
 
@@ -116,11 +124,10 @@ function rebuildPrompt(p: Record<string, number>): string {
         `How many different numbers could be in each row? Count 1 and ${n} as two of them.`
       )
     }
+    case IS_MULTIPLE:
+      return `Is ${n} a multiple of ${p.by}?`
     default:
-      return (
-        `Is ${n} a multiple of ${p.by}? Give the remainder when ${n} is divided by ${p.by} — ` +
-        `a remainder of 0 means yes.`
-      )
+      return `What is the remainder when ${n} is divided by ${p.by}?`
   }
 }
 
@@ -160,7 +167,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     assertGeneratorSound(mt4oa4, factorsAnswer, { promptParams: ['n'], rebuildPrompt })
   })
 
-  it('asks seven genuinely different questions, none of them the house style', () => {
+  it('asks eight genuinely different questions, none of them the house style', () => {
     // Rion's complaint, as a test. He said the questions felt repetitive — "the
     // subject might change slightly, but the pattern remained" — and on this
     // standard there were three sentences, each about a third of everything he
@@ -181,9 +188,9 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
         `"${key}" is ${((count / items.length) * 100).toFixed(0)}% of items`,
       ).toBeLessThan(0.35)
     }
-    // Formats, not just wordings: seven sentences that were really one question
+    // Formats, not just wordings: eight sentences that were really one question
     // would pass the check above and fail the point of it.
-    expect(formats.size).toBe(7)
+    expect(formats.size).toBe(8)
     for (const [format, count] of formats) {
       expect(count / items.length, `format ${format} is too much of the diet`).toBeLessThan(0.35)
     }
@@ -207,7 +214,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     for (let d = EASIEST; d <= HARDEST; d += 3) {
       for (const item of itemsAt(d, 40)) {
         const { n, format, by } = item.params as Record<string, number>
-        if (format === REMAINDER || format === NEXT_MULTIPLE) {
+        if (format === REMAINDER || format === NEXT_MULTIPLE || format === IS_MULTIPLE) {
           expect(n, item.prompt).toBeLessThanOrEqual(1000)
           expect(by, item.prompt).toBeGreaterThanOrEqual(2)
           expect(by, item.prompt).toBeLessThanOrEqual(9)
@@ -229,7 +236,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     expect(easy.has(PAIRS)).toBe(true)
     expect(easy.has(FACTOR_COUNT)).toBe(true)
     for (const d of [40, 65, HARDEST]) {
-      expect(new Set(itemsAt(d, 200).map((i) => i.params.format)).size, `d=${d}`).toBe(7)
+      expect(new Set(itemsAt(d, 200).map((i) => i.params.format)).size, `d=${d}`).toBe(8)
     }
   })
 
@@ -307,6 +314,9 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     let factors = 0
     for (const item of everyItem()) {
       const format = item.params.format!
+      // Only the counting framings are in question here, and none of them is a
+      // choice, so the numeric key is safe to read.
+      if (item.answer.kind !== 'rational') continue
       const answer = Number(canonicalOf(item.answer))
       if (format === PAIRS) {
         const m = item.misconceptions.find((x) => x.id === 'counted-factors-not-pairs')
@@ -355,7 +365,7 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
     for (const item of everyItem()) {
       expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
       for (const m of item.misconceptions) {
-        expect(m.signature, item.prompt).not.toBe(canonicalOf(item.answer))
+        expect(m.signature, item.prompt).not.toBe(answerText(item.answer))
       }
     }
   })
@@ -370,10 +380,46 @@ describe('MT.4.OA.4 factors, multiples, prime and composite', () => {
 
   it('ends every working on the number the question asked for', () => {
     for (const item of everyItem()) {
+      // True/false has its own version of this below: its answer is a verdict,
+      // and the last step has to state the verdict rather than contain the word
+      // "True".
+      if (item.answer.kind !== 'rational') continue
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
         canonicalOf(item.answer),
       )
     }
+  })
+
+  it('ends a true/false working on the verdict, not on the remainder', () => {
+    // The shared multiple steps finish on the remainder, which answers the
+    // remainder question and not this one. A child reading to the bottom of a
+    // "is 348 a multiple of 6?" explanation should find the yes or the no.
+    let seen = 0
+    for (const item of everyItem()) {
+      if (item.params.format !== IS_MULTIPLE) continue
+      seen++
+      const last = item.workedSteps[item.workedSteps.length - 1]!
+      const isTrue = answerText(item.answer) === 'True'
+      expect(last, item.prompt).toBe(
+        isTrue
+          ? `So ${item.params.n} is a multiple of ${item.params.by}.`
+          : `So ${item.params.n} is not a multiple of ${item.params.by}.`,
+      )
+    }
+    expect(seen, 'no true/false items generated at all').toBeGreaterThan(0)
+  })
+
+  it('asks the multiple question both ways round', () => {
+    // A child who spots that the answer is usually True has learned the
+    // generator rather than the mathematics.
+    const answers = everyItem()
+      .filter((i) => i.params.format === IS_MULTIPLE)
+      .map((i) => answerText(i.answer))
+    const trues = answers.filter((a) => a === 'True').length
+
+    expect(answers.length).toBeGreaterThan(50)
+    expect(trues / answers.length, 'True share').toBeGreaterThan(0.3)
+    expect(trues / answers.length, 'True share').toBeLessThan(0.7)
   })
 
   it('agrees in number when it counts pairs, factors and rows', () => {

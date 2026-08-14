@@ -8,10 +8,10 @@
  * composite."
  *
  * Four things in one sentence, and none of them is naturally a single number.
- * `AnswerSpec` grades one value, so each is asked in the form that already has a
- * numeric answer rather than by stretching the answer type.
+ * Most are asked in the form that already has a numeric answer; the one that is
+ * genuinely a yes/no question is now asked as one, which it was not always.
  *
- * Seven formats. There used to be three, each about a third of what he saw, and
+ * Eight formats. There used to be three, each about a third of what he saw, and
  * Rion — ten years old, plays this — said the questions felt repetitive: "the
  * subject might change slightly, but the pattern remained." So:
  *
@@ -35,9 +35,16 @@
  *    is the smallest-factor search plus the insight that its partner is the
  *    biggest. It is the only framing here that makes a child use a pair as a
  *    *pair*.
- *  - `REMAINDER`: *"is 348 a multiple of 6? Give the remainder."* 0 means yes.
- *    The remainder carries the answer and also says how far off it was, which
- *    "no" does not.
+ *  - `IS_MULTIPLE`: *"is 348 a multiple of 6?"* True or False. This used to be
+ *    welded to the format below, which asked the yes/no question and then said
+ *    *"give the remainder — a remainder of 0 means yes"*, because the answer box
+ *    could only take a number. Rion's dad called that clunky and he was right: it
+ *    made a child encode a judgement as arithmetic to suit the input. A two-option
+ *    answer is right half the time by luck, which `updateRating` is told about and
+ *    prices accordingly.
+ *  - `REMAINDER`: *"what is the remainder when 348 is divided by 6?"* A good
+ *    question on its own, now that it has stopped doing two jobs at once. The
+ *    remainder says how far off it was, which "no" does not.
  *  - `NEXT_MULTIPLE`: *"what is the next multiple of 7 after 50?"* Multiples as a
  *    sequence you can move along rather than a property to test.
  *
@@ -62,6 +69,8 @@
  * two-digit number, which is a fifth-grade skill.
  */
 
+import { FALSE_LABEL, TRUE_LABEL, trueFalse } from '../../answer'
+import type { AnswerSpec } from '../../answer'
 import type { Item, ItemGenerator, Misconception, Rng } from '../types'
 
 /**
@@ -86,6 +95,20 @@ export const FACTOR_COUNT = 3
 export const NEXT_MULTIPLE = 4
 export const BIGGEST_PARTNER = 5
 export const WORD_ROWS = 6
+/**
+ * `IS_MULTIPLE`: *"is 348 a multiple of 6?"* — True or False.
+ *
+ * This is what `REMAINDER` used to be pretending to be. It asked the yes/no
+ * question and then, because the answer box could only take a number, told him
+ * *"give the remainder — a remainder of 0 means yes"*. Rion's dad called that
+ * clunky and he was right: it made a child encode a judgement as arithmetic to
+ * suit the input.
+ *
+ * Now the two are separate questions, and both are better for it. This one asks
+ * what it means. `REMAINDER` asks for the remainder and nothing else, which is a
+ * good question on its own once it has stopped doing two jobs.
+ */
+export const IS_MULTIPLE = 7
 
 const RANGE: [number, number] = [15, 90]
 
@@ -133,25 +156,25 @@ interface Band {
  */
 const BANDS: readonly Band[] = [
   {
-    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE],
+    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, IS_MULTIPLE],
     pairs: { min: 6, max: 30, minPairs: 1, maxPairs: 3 },
     smallest: { min: 9, max: 50, oddOnly: false },
     remainder: { digits: [2], divisors: [2, 3, 4, 5] },
   },
   {
-    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, SMALLEST, BIGGEST_PARTNER],
+    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, IS_MULTIPLE, SMALLEST, BIGGEST_PARTNER],
     pairs: { min: 10, max: 50, minPairs: 1, maxPairs: 5 },
     smallest: { min: 9, max: 50, oddOnly: false },
     remainder: { digits: [2, 3], divisors: [2, 3, 4, 5, 6, 7, 8, 9] },
   },
   {
-    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, SMALLEST, BIGGEST_PARTNER],
+    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, IS_MULTIPLE, SMALLEST, BIGGEST_PARTNER],
     pairs: { min: 20, max: 80, minPairs: 3, maxPairs: 6 },
     smallest: { min: 15, max: 80, oddOnly: true },
     remainder: { digits: [3], divisors: [3, 4, 6, 7, 8, 9] },
   },
   {
-    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, SMALLEST, BIGGEST_PARTNER],
+    formats: [PAIRS, FACTOR_COUNT, WORD_ROWS, REMAINDER, NEXT_MULTIPLE, IS_MULTIPLE, SMALLEST, BIGGEST_PARTNER],
     pairs: { min: 40, max: 100, minPairs: 4, maxPairs: 8 },
     smallest: { min: 33, max: 100, oddOnly: true },
     remainder: { digits: [3], divisors: [4, 6, 7, 8, 9] },
@@ -348,7 +371,7 @@ function buildMultiple(rng: Rng, band: Band, needsRemainder: boolean): Multiple 
 /** What a format decides, before the common parts are wrapped around it. */
 interface Draft {
   prompt: string
-  answer: string
+  answer: AnswerSpec
   /** The number the question is about, which every format shows. */
   n: number
   /** The one-digit number a multiple framing is about, or 0. */
@@ -375,7 +398,7 @@ export const mt4oa4: ItemGenerator = {
       standardId: 'MT.4.OA.4',
       difficulty: d,
       prompt: draft.prompt,
-      answer: { kind: 'rational', canonical: draft.answer },
+      answer: draft.answer,
       // Only what the question shows. The quotient and the remainder are
       // deliberately left out: a test handed those would be checking the
       // generator's arithmetic against itself. `by` is 0 on the framings that
@@ -390,6 +413,12 @@ export const mt4oa4: ItemGenerator = {
 
 function draftFor(format: number, index: number, band: Band, rng: Rng): Draft {
   if (format === REMAINDER) return multipleRemainder(buildMultiple(rng, band, false))
+  // `needsRemainder: false` already coin-flips between a multiple and a
+  // non-multiple, so True and False come up about equally. Passing `true` here
+  // would force a remainder every time and make False the answer to roughly five
+  // questions in six -- a child who spots that has learned the generator rather
+  // than the mathematics.
+  if (format === IS_MULTIPLE) return isMultiple(buildMultiple(rng, band, false))
   if (format === NEXT_MULTIPLE) return nextMultiple(buildMultiple(rng, band, true))
 
   const factored = rng.pick(poolFor(index, poolKindFor(format)))
@@ -417,7 +446,7 @@ function factorPairs(n: number, divisors: number[]): Draft {
   const pairs = divisors.length / 2
   return {
     prompt: `How many factor pairs does ${n} have? Count 1 ${TIMES} ${n} as one of them.`,
-    answer: String(pairs),
+    answer: { kind: 'rational', canonical: String(pairs) },
     n,
     by: 0,
     extra: {},
@@ -453,7 +482,7 @@ function factorCount(n: number, divisors: number[]): Draft {
   const pairs = divisors.length / 2
   return {
     prompt: `How many factors does ${n} have? Count 1 and ${n} as two of them.`,
-    answer: String(divisors.length),
+    answer: { kind: 'rational', canonical: String(divisors.length) },
     n,
     by: 0,
     extra: {},
@@ -478,7 +507,7 @@ function wordRows(n: number, divisors: number[], index: number): Draft {
     prompt:
       `${count(n, c.item, c.items)} are ${c.verb} in equal rows with none left over. ` +
       `How many different numbers could be in each row? Count 1 and ${n} as two of them.`,
-    answer: String(divisors.length),
+    answer: { kind: 'rational', canonical: String(divisors.length) },
     n,
     by: 0,
     extra: { context: index },
@@ -500,7 +529,7 @@ function smallestDivisor(n: number, smallest: number): Draft {
     prompt:
       `What is the smallest number bigger than 1 that divides ${n} evenly? ` +
       `If nothing but ${n} itself divides it, then ${n} is prime and the answer is ${n}.`,
-    answer: String(smallest),
+    answer: { kind: 'rational', canonical: String(smallest) },
     n,
     by: 0,
     extra: {},
@@ -516,7 +545,7 @@ function biggestPartner(n: number, smallest: number): Draft {
 
   return {
     prompt: `What is the biggest factor of ${n} that is not ${n} itself?`,
-    answer: String(partner),
+    answer: { kind: 'rational', canonical: String(partner) },
     n,
     by: 0,
     extra: {},
@@ -570,18 +599,62 @@ function biggestPartner(n: number, smallest: number): Draft {
   }
 }
 
-/** "Is 348 a multiple of 6? Give the remainder." */
+/** "What is the remainder when 348 is divided by 6?" */
 function multipleRemainder(multiple: Multiple): Draft {
   return {
-    prompt:
-      `Is ${multiple.n} a multiple of ${multiple.by}? Give the remainder when ${multiple.n} ` +
-      `is divided by ${multiple.by} — a remainder of 0 means yes.`,
-    answer: String(multiple.remainder),
+    // No longer asks the yes/no question first. It used to open with "is 348 a
+    // multiple of 6?" and then ask for the remainder as a way of answering it,
+    // which meant every child had to hold two questions to answer one.
+    prompt: `What is the remainder when ${multiple.n} is divided by ${multiple.by}?`,
+    answer: { kind: 'rational', canonical: String(multiple.remainder) },
     n: multiple.n,
     by: multiple.by,
     extra: {},
     workedSteps: multipleSteps(multiple),
     misconceptions: multipleMistakes(multiple),
+  }
+}
+
+/**
+ * "Is 348 a multiple of 6?" — True or False.
+ *
+ * The one wrong option gets a real explanation rather than filler. Which
+ * explanation depends on the direction: saying False about a multiple means the
+ * division was thought to leave something over, and saying True about a
+ * non-multiple means the remainder was missed. Both are worth naming, and both
+ * end at the same division either way.
+ */
+function isMultiple(multiple: Multiple): Draft {
+  const { n, by, quotient, remainder } = multiple
+  const isTrue = remainder === 0
+
+  return {
+    prompt: `Is ${n} a multiple of ${by}?`,
+    answer: trueFalse(isTrue),
+    n,
+    by,
+    extra: {},
+    // The shared steps end on the remainder, which is the answer to the
+    // *remainder* question and not to this one. A working has to finish on the
+    // thing that was asked, so this one says the verdict out loud.
+    workedSteps: [
+      ...multipleSteps(multiple),
+      isTrue ? `So ${n} is a multiple of ${by}.` : `So ${n} is not a multiple of ${by}.`,
+    ],
+    misconceptions: [
+      {
+        id: isTrue ? 'thought-it-left-a-remainder' : 'missed-the-remainder',
+        signature: isTrue ? FALSE_LABEL : TRUE_LABEL,
+        label: isTrue ? 'Said no to a multiple' : 'Said yes to a non-multiple',
+        explanation: isTrue
+          ? `${by} ${TIMES} ${quotient} = ${n} exactly, with nothing left over. A multiple of ` +
+            `${by} is any number you land on counting up in ${by}s, and counting up in ` +
+            `${by}s does land on ${n}.`
+          : `Counting up in ${by}s you land on ${by} ${TIMES} ${quotient} = ${quotient * by}, ` +
+            `and the next one is past ${n}. ${n} ${MINUS} ${quotient * by} = ${remainder} left ` +
+            `over, so ${n} is not one of the numbers you land on.`,
+      },
+    ],
   }
 }
 
@@ -592,7 +665,7 @@ function nextMultiple({ n, by, quotient, remainder }: Multiple): Draft {
 
   return {
     prompt: `What is the next multiple of ${by} after ${n}?`,
-    answer: String(next),
+    answer: { kind: 'rational', canonical: String(next) },
     n,
     by,
     extra: {},

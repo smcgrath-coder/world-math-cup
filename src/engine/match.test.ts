@@ -28,7 +28,7 @@ import { PRESSURES, TARGET_SUCCESS } from './select'
 import type { Pressure } from './select'
 import { expectedScore } from './elo'
 import type { Opponent } from '../data/opponents'
-import { canonicalOf } from './answer'
+import { answerText, canonicalOf } from './answer'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -81,7 +81,8 @@ const answer = (s: MatchState, given: string, deps: MatchDeps, latencyMs = 1200)
 // ---------------------------------------------------------------------------
 // Answers of a known quality
 
-const right = (item: Item) => canonicalOf(item.answer)
+/** Answered correctly, as the child would give it: a typed number or a picked option. */
+const right = (item: Item) => answerText(item.answer)
 
 /**
  * A slip on a sound method, so `classifyMiss` reads it as `near`.
@@ -97,6 +98,10 @@ const right = (item: Item) => canonicalOf(item.answer)
  * get a one-twentieth gap, which the fraction rule still reads as a slip.
  */
 function nearMiss(item: Item): string {
+  // A choice has no neighbourhood, so there is no such thing as a slip on one.
+  // The other option is the only wrong answer available, and `classifyMiss`
+  // reads it as `off` -- which is the honest reading.
+  if (item.answer.kind === 'choice') return otherOption(item.answer)
   const r = Rational.parse(canonicalOf(item.answer))!
   if (r.isInteger() && Math.abs(r.n) >= 10) return String(r.n + 1)
   if (r.n === 0) return '1/20'
@@ -109,8 +114,14 @@ function nearMiss(item: Item): string {
  * attempt by attempt.
  */
 function wildMiss(item: Item): string {
+  if (item.answer.kind === 'choice') return otherOption(item.answer)
   const r = Rational.parse(canonicalOf(item.answer))!
   return `${r.n + 1_000_000 * r.d}/${r.d}`
+}
+
+/** Any option that is not the key. There is always at least one. */
+function otherOption(answer: { options: string[]; correct: number }): string {
+  return answer.options.find((_, i) => i !== answer.correct)!
 }
 
 // ---------------------------------------------------------------------------
@@ -1224,7 +1235,7 @@ describe('the log', () => {
     for (let i = 0; i < 40 && s.phase !== 'fulltime'; i++) {
       const item = s.currentItem
       const signature = item?.misconceptions[0]?.signature
-      if (item !== null && signature !== undefined && signature !== canonicalOf(item.answer)) {
+      if (item !== null && signature !== undefined && signature !== answerText(item.answer)) {
         const next = answer(s, signature, deps)
         if (next.log.length > s.log.length && last(next.log).correct === false) {
           expect(last(next.log).misconceptionId).toBe(item.misconceptions[0]!.id)
