@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Character } from '../components/Character'
 import { PlayerCard } from '../components/PlayerCard'
 import { useAttempts, useCountry } from '../store/useGameState'
 import { deriveCard, deriveCourage, deriveRatings } from '../store/derive'
@@ -46,6 +47,13 @@ export function MyCard({ onTrain }: MyCardProps) {
 
   return (
     <div className="flex min-h-full flex-col items-center gap-5 bg-pitch-dark px-5 py-6 text-white">
+      {/*
+        Above the card rather than inside it. `PlayerCard` also draws Brazil, and
+        a card component that can render his face is one refactor away from
+        putting it on an opponent.
+      */}
+      <Character name="rion-portrait" alt="You, in your kit" className="-mb-2 w-28" />
+
       <PlayerCard country={country} card={card} ratings={ratings} />
 
       <section

@@ -6,14 +6,18 @@ usefully — the two screens that are **not** getting a picture and why.
 Files go in `public/art/`, lowercase and hyphenated, exactly as the pack names
 them. Nothing reads them yet.
 
-## Decided
+## Placed
 
 | File | Screen | Why there |
 |---|---|---|
 | `rion-portrait.png` | Card tab, above `PlayerCard` | The card is the one screen purely about him. It goes *above* the card, not inside it — `PlayerCard` also draws Brazil, and a component that renders his face for an opponent is a bug waiting to happen. |
 | `rion-ready.png` | Training ground, while choosing a topic | Specced as the neutral repeatable pose. The training ground is the one screen with idle time and no scoreline. |
-| `analyst-thinking.png` | Film room, while a miss is being read | The analyst is the film room's voice already. |
-| `analyst-explaining.png` | Film room, alongside the explanation | Same, on the beat where it turns into advice. |
+| `analyst-explaining.png` | Film room header, when there is tape | One analyst, in the header. The first plan put one on each group card; the groups are the thing to read and a face repeated down the page competes with them. |
+| `analyst-thinking.png` | Film room header, when nothing got away | Same slot, other pose. Nothing to break down, so he is not breaking anything down. |
+
+All four render through `components/Character.tsx`, which starts hidden and fades
+in on `load` rather than starting visible and hiding on `error` — same end state
+when the file is there, no flash of a broken icon when it is not.
 
 ## Deliberately not placed
 
@@ -32,12 +36,13 @@ scoreline. A celebration image above that is the one thing that would put the
 scoreline back in charge of the tone. It belongs on an unambiguous win — the
 goal beat, or a knockout he actually took — and nowhere near a loss.
 
-## The rule for rendering any of them
+## Still to place
 
-Missing art must render as nothing at all, never as a broken-image icon or a
-gap that shifts the layout. Half the pack does not exist yet, the rest arrives in
-batches, and a screen that breaks between batches is a screen nobody will trust.
-Hide on `error`, reserve no space until it has loaded.
+`coach.png` and `rion-celebration.png` are built and in `public/art/`, and
+neither has a home yet for the reasons above. The celebration wants an
+unambiguous win — the goal beat inside the match, or a knockout — which is a
+change to the match screen rather than a picture dropped onto an existing one,
+so it is worth doing deliberately rather than now.
 
 ## Still to generate
 

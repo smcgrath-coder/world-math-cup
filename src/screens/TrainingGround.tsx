@@ -33,6 +33,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
+import { Character } from '../components/Character'
 import { QuestionInput } from '../components/QuestionInput'
 import {
   LABELS_BY_STANDARD,
@@ -199,18 +200,23 @@ function Picker({
           </div>
 
           {stat === null ? (
-            <>
-              <h1 className="mt-2 text-3xl leading-tight font-black text-balance">
-                What do you want to work on?
-              </h1>
-              <p className="mt-3 text-[15px] leading-relaxed text-white/70">
-                Preseason. No clock in here, nothing on the line, and you can walk off whenever you
-                like.
-              </p>
-              <p className="mt-2 text-[15px] leading-relaxed text-white/70">
-                Whatever you raise in here is what you take into your next match.
-              </p>
-            </>
+            // The one screen in the game with idle time and no scoreline, which
+            // is why this is where he gets to stand and look at himself.
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h1 className="mt-2 text-3xl leading-tight font-black text-balance">
+                  What do you want to work on?
+                </h1>
+                <p className="mt-3 text-[15px] leading-relaxed text-white/70">
+                  Preseason. No clock in here, nothing on the line, and you can walk off whenever
+                  you like.
+                </p>
+                <p className="mt-2 text-[15px] leading-relaxed text-white/70">
+                  Whatever you raise in here is what you take into your next match.
+                </p>
+              </div>
+              <Character name="rion-ready" className="mt-2 w-24 shrink-0 sm:w-28" />
+            </div>
           ) : (
             <>
               <h1 className="mt-2 text-3xl leading-tight font-black text-balance">

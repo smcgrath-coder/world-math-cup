@@ -30,6 +30,7 @@
  */
 
 import { motion } from 'framer-motion'
+import { Character } from '../components/Character'
 import { classifyMiss } from '../engine/answer'
 import { LABELS_BY_STANDARD, STAT_LABELS } from '../components/stats'
 import { CARD_STATS } from '../store/derive'
@@ -179,25 +180,37 @@ export function FilmRoom({ matchId, opponentName, questions, onBack }: FilmRoomP
             </button>
           </div>
 
-          {total === 0 ? (
-            <>
-              <h1 className="mt-2 text-3xl leading-tight font-black text-balance">
-                Nothing to watch back.
-              </h1>
-              <p className="mt-3 text-[15px] leading-relaxed text-white/75">
-                {`Not one ball got away from you${against}. There is no tape, because there is nothing on it.`}
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="mt-2 text-3xl leading-tight font-black text-balance">
-                {total === 1 ? 'One ball got away.' : `${opening(count(total))} balls got away.`}
-              </h1>
-              <p className="mt-3 text-[15px] leading-relaxed text-white/70">
-                No clock in here, and nothing on the line. Walk out whenever you’ve seen enough.
-              </p>
-            </>
-          )}
+          {/*
+            One analyst, in the header, rather than one per group. The groups are
+            the thing to read; a face repeated down the page competes with them.
+          */}
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              {total === 0 ? (
+                <>
+                  <h1 className="mt-2 text-3xl leading-tight font-black text-balance">
+                    Nothing to watch back.
+                  </h1>
+                  <p className="mt-3 text-[15px] leading-relaxed text-white/75">
+                    {`Not one ball got away from you${against}. There is no tape, because there is nothing on it.`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 className="mt-2 text-3xl leading-tight font-black text-balance">
+                    {total === 1 ? 'One ball got away.' : `${opening(count(total))} balls got away.`}
+                  </h1>
+                  <p className="mt-3 text-[15px] leading-relaxed text-white/70">
+                    No clock in here, and nothing on the line. Walk out whenever you’ve seen enough.
+                  </p>
+                </>
+              )}
+            </div>
+            <Character
+              name={total === 0 ? 'analyst-thinking' : 'analyst-explaining'}
+              className="mt-2 w-20 shrink-0 sm:w-24"
+            />
+          </div>
         </header>
 
         {groups.map((group) => (
