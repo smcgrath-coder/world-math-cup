@@ -75,6 +75,28 @@ python3 scripts/build-audio.py ~/Downloads   # <name>.mp3 -> public/audio/<name>
 Nothing is preloaded. An element is built the first time its track is wanted, so
 a session that never reaches a knockout never downloads the knockout music.
 
+## Character art
+
+Same shape as the audio: `art-src/` holds the full-size originals and is
+committed, because they cannot be regenerated — the same prompt produces a
+different person. `public/art/` holds the built copies, resized to roughly twice
+the size each one is actually drawn at.
+
+```bash
+python3 scripts/build-art.py     # art-src/ -> public/art/, 5.4MB -> 842KB
+python3 scripts/check-art.py     # prove the cut-outs are real
+```
+
+`check-art.py` exists because `sips -g hasAlpha` answers the wrong question. It
+reports that an alpha channel is present, not that anything in it is
+transparent — a PNG with a white background baked in and a fully opaque alpha
+passes that check and then renders as a white box on a dark green pitch. The
+checker decodes the file and looks at the actual values, and the build runs it
+afterwards rather than trusting `sips` to carry alpha through a resize.
+
+`docs/art/placement.md` says where each file goes, and which two screens are
+deliberately not getting one.
+
 ## Regenerating data
 
 ```bash
