@@ -26,7 +26,8 @@
 
 import { expect } from 'vitest'
 import { makeRng } from './rng'
-import { checkAnswer, canonicalOf } from '../answer'
+import { answerText, canonicalOf, checkAnswer, normaliseInput } from '../answer'
+import { Rational } from '../rational'
 import type { Item, ItemGenerator } from './types'
 
 /**
@@ -81,6 +82,57 @@ function numbersIn(text: string): Set<string> {
   return new Set(text.match(/\d+/g) ?? [])
 }
 
+/**
+ * The checks a set of options has to pass.
+ *
+ * Grading a choice is by index, so "the key is accepted by the checker" and
+ * "no distractor grades as correct" are true by construction and prove nothing.
+ * The check that does the work is the last one: **no two options may mean the
+ * same number.**
+ *
+ * That is the catastrophic case for a choice, and it is invisible to every other
+ * check here. Offer `6` and `6/1`, or `0.5` and `1/2`, and grading says only the
+ * indexed one is right — so a child who picks the other has given a correct
+ * answer and is told he has not. Marking Rion wrong when he is right is the one
+ * thing this whole file exists to make impossible, and by index it would sail
+ * through.
+ */
+function assertChoiceSound(
+  answer: { kind: 'choice'; options: string[]; correct: number },
+  where: string,
+): void {
+  const { options, correct } = answer
+
+  expect(options.length, `fewer than two options ${where}`).toBeGreaterThanOrEqual(2)
+  expect(correct, `correct index below zero ${where}`).toBeGreaterThanOrEqual(0)
+  expect(correct, `correct index past the options ${where}`).toBeLessThan(options.length)
+
+  const seen = new Set<string>()
+  for (const option of options) {
+    expect(option.trim().length, `blank option ${where}`).toBeGreaterThan(0)
+    // Identical text twice is two buttons that cannot be told apart, and one of
+    // them is wrong.
+    expect(seen.has(option), `duplicate option "${option}" ${where}`).toBe(false)
+    seen.add(option)
+  }
+
+  // Two options meaning the same value. Only compared when both parse as
+  // numbers: `True`/`False` and `>`/`<` are not numbers and cannot collide.
+  const values = options.map((option) => Rational.parse(normaliseInput(option)))
+  for (let i = 0; i < options.length; i++) {
+    for (let j = i + 1; j < options.length; j++) {
+      const a = values[i]
+      const b = values[j]
+      if (!a || !b) continue
+      expect(
+        a.equals(b),
+        `options "${options[i]}" and "${options[j]}" are the same number ${where} — ` +
+          `whichever one is not the key marks a correct answer wrong`,
+      ).toBe(false)
+    }
+  }
+}
+
 /** Every check that applies to a single item, wherever it came from. */
 function assertItemSound(
   item: Item,
@@ -130,25 +182,36 @@ function assertItemSound(
     expect(step.trim().length, `worked step ${i} is blank ${where}`).toBeGreaterThan(0)
   })
 
-  expect(item.answer.kind, `answer kind ${where}`).toBe('rational')
+  if (item.answer.kind === 'choice') {
+    assertChoiceSound(item.answer, where)
+    // There is no box to put inside the expression, so a slot here would be a
+    // prompt rendered with a `{}` in it and no input to fill it.
+    expect(
+      item.promptWithSlot,
+      `promptWithSlot on a choice item ${where}`,
+    ).toBeUndefined()
+  } else {
+    // The key must be accepted by the same checker the child's typing goes
+    // through. Anything else means the game can ask a question it will not
+    // accept the answer to.
+    const self = checkAnswer(canonicalOf(item.answer), item.answer)
+    expect(self.correct, `key ${canonicalOf(item.answer)} rejected by checker ${where}`).toBe(true)
 
-  // The key must be accepted by the same checker the child's typing goes
-  // through. Anything else means the game can ask a question it will not
-  // accept the answer to.
-  const self = checkAnswer(canonicalOf(item.answer), item.answer)
-  expect(self.correct, `key ${canonicalOf(item.answer)} rejected by checker ${where}`).toBe(true)
-
-  // The key must also be in lowest terms. `checkAnswer` accepts `14/16` for
-  // `7/8` with an "unreduced" nudge, which is right for a child's typing and
-  // wrong for a key: an unreduced key would fire that nudge against the very
-  // answer it published as correct.
-  expect(self.nudge, `key ${canonicalOf(item.answer)} is not in lowest terms ${where}`).toBeUndefined()
+    // The key must also be in lowest terms. `checkAnswer` accepts `14/16` for
+    // `7/8` with an "unreduced" nudge, which is right for a child's typing and
+    // wrong for a key: an unreduced key would fire that nudge against the very
+    // answer it published as correct.
+    expect(
+      self.nudge,
+      `key ${canonicalOf(item.answer)} is not in lowest terms ${where}`,
+    ).toBeUndefined()
+  }
 
   // The independent recomputation. This is the check the whole file exists for.
   const independent = verify(item.params)
   expect(
     checkAnswer(independent, item.answer).correct,
-    `key ${canonicalOf(item.answer)} disagrees with independent ${independent} ` +
+    `key ${answerText(item.answer)} disagrees with independent ${independent} ` +
       `${where}, params=${JSON.stringify(item.params)}`,
   ).toBe(true)
 
