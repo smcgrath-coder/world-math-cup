@@ -968,7 +968,7 @@ describe('what is riding on it', () => {
     // where the design put it.
     const byBand = (stakes: Stakes) => {
       const sums = new Map<string, { sum: number; n: number }>()
-      for (let seed = 1; seed <= 40; seed++) {
+      for (let seed = 1; seed <= 150; seed++) {
         const deps = makeDeps(seed)
         const trace = play(start(deps, 'm', BRAZIL, stakes), deps, elo(50, makeRng(seed * 7 + 1)))
         for (const [i, s] of trace.entries()) {
@@ -1187,6 +1187,62 @@ describe('the log', () => {
       expect(last(s.log).context).toBe(before.phase === 'tackleback' ? 'tackleback' : 'match')
       expect(s.log).toHaveLength(i + 1)
     }
+  })
+
+  it('records how many options a choice offered, so the rating can price the luck', () => {
+    /*
+     * The bug this exists for: `Attempt.choices` was added, `deriveRatings` was
+     * taught to read it, and no screen wrote it. Every check passed and the
+     * guessing correction never fired once in the real game -- a lucky true/false
+     * built the card exactly as a typed answer would, which is the whole thing
+     * the correction was added to prevent.
+     *
+     * Pairs each logged attempt with the item it was answering, the same way the
+     * difficulty test below does, and demands the two agree.
+     */
+    let seenChoice = 0
+
+    for (let seed = 1; seed <= 150; seed++) {
+      const deps = makeDeps(seed)
+      const trace = play(start(deps), deps, (item, s) =>
+        s.questionsAsked % 3 === 0 ? wildMiss(item) : right(item),
+      )
+      const final = last(trace)
+
+      const asked: Item[] = []
+      for (const [i, st] of trace.entries()) {
+        if (i > 0 && st.log.length > trace[i - 1]!.log.length) {
+          asked.push(trace[i - 1]!.currentItem!)
+        }
+      }
+      expect(asked).toHaveLength(final.log.length)
+
+      for (const [i, attempt] of final.log.entries()) {
+        const item = asked[i]!
+        if (item.answer.kind === 'choice') {
+          expect(attempt.choices, `${item.prompt} at seed ${seed}`).toBe(item.answer.options.length)
+          seenChoice++
+        } else {
+          // Absent, not zero: absent is what every attempt written before
+          // choices existed looks like, and it must keep meaning "typed".
+          expect(attempt.choices, `${item.prompt} at seed ${seed}`).toBeUndefined()
+        }
+      }
+    }
+
+    /*
+     * 150 matches, not the 40 this started at.
+     *
+     * Choices are about an eighth of one standard's output and that standard is
+     * about a twentieth of a match, so 40 matches gave 41 chances and drew zero
+     * -- (7/8)^41, about one run in 230. Long enough to look like a bug, and I
+     * spent a while hunting one that was not there. 150 matches gives 112 chances
+     * and about 13 choices, which is a sample rather than a coincidence.
+     *
+     * Same lesson the soundness harness learned when its seed count went from 60
+     * to 400: a sparse sweep does not fail, it just stops proving anything.
+     */
+    expect(seenChoice, 'no choice items appeared in any match').toBeGreaterThan(0)
   })
 
   it('logs the item that was generated, not the difficulty that was asked for', () => {

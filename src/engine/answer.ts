@@ -154,6 +154,19 @@ export function guessFloor(spec: AnswerSpec): number {
 }
 
 /**
+ * The option count to record on an attempt, or `undefined` for a typed answer.
+ *
+ * Every screen that writes an attempt has to record this, because the rating is
+ * derived from the log long after the item is gone and `deriveRatings` cannot
+ * price the luck without it. Written as one helper so the three call sites cannot
+ * drift: a screen that forgot would silently score true/false answers as though
+ * they were typed, which is the exact inflation the correction exists to stop.
+ */
+export function choiceCount(spec: AnswerSpec): number | undefined {
+  return spec.kind === 'choice' ? spec.options.length : undefined
+}
+
+/**
  * The right answer, as text to show him.
  *
  * Every screen that reveals an answer — the match, the training ground's

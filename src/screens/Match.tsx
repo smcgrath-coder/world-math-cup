@@ -42,7 +42,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
 import { Pitch } from '../components/Pitch'
-import { QuestionInput } from '../components/QuestionInput'
+import { AnswerInput } from '../components/AnswerInput'
 import { ShotMenu } from '../components/ShotMenu'
 import { TackleBack } from '../components/TackleBack'
 import { STANDARDS_BY_STAT, STAT_LABELS } from '../components/stats'
@@ -588,10 +588,9 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
               // cannot shift under his thumb between questions.
               className={clsx('transition-opacity duration-200', !live && 'opacity-25')}
             >
-              <QuestionInput
+              <AnswerInput
                 key={shownKey}
-                prompt={shownItem.prompt}
-                promptWithSlot={shownItem.promptWithSlot}
+                item={shownItem}
                 onSubmit={(given, latencyMs) => advance({ type: 'answer', given, latencyMs })}
                 disabled={!live}
               />

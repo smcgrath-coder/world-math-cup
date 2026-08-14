@@ -79,7 +79,7 @@
 import type { Opponent } from '../data/opponents'
 import { RATED_STANDARD_IDS, SEED_RATING } from '../store/derive'
 import type { Attempt, AttemptContext, ShotChoice, StandardRating } from '../store/types'
-import { checkAnswer, classifyMiss } from './answer'
+import { checkAnswer, choiceCount, classifyMiss } from './answer'
 import type { MissClassification } from './answer'
 import { SPREAD, difficultyForSuccess } from './elo'
 import { generatorFor } from './items/generators'
@@ -1013,6 +1013,11 @@ function makeAttempt(
     matchId: state.id,
   }
   if (judged.misconceptionId !== undefined) attempt.misconceptionId = judged.misconceptionId
+
+  // How many options he was choosing between, so the rating can be priced for
+  // luck when the log is replayed. Absent on a typed answer.
+  const choices = choiceCount(item.answer)
+  if (choices !== undefined) attempt.choices = choices
 
   const shot = shotTagFor(state, item, context)
   if (shot !== undefined) attempt.shot = shot

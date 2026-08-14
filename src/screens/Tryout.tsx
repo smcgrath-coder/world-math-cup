@@ -37,11 +37,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { QuestionInput } from '../components/QuestionInput'
+import { AnswerInput } from '../components/AnswerInput'
 import { PlayerCard } from '../components/PlayerCard'
 import { STAT_LABELS, clampStat } from '../components/stats'
 import { DEFAULT_FLAG } from '../country/flag'
-import { checkAnswer, classifyMiss } from '../engine/answer'
+import { checkAnswer, classifyMiss, choiceCount } from '../engine/answer'
 import { makeRng } from '../engine/items/rng'
 import type { Item, Rng } from '../engine/items/types'
 import {
@@ -180,6 +180,12 @@ export function Tryout({ seed, onDone }: TryoutProps) {
       context: 'tryout',
     }
 
+    // The try-out's own ladder does not fold through Elo, but its attempts sit
+    // in the same log as everything else and PAC is derived from all of them, so
+    // the option count belongs here too.
+    const choices = choiceCount(item.answer)
+    if (choices !== undefined) draft.choices = choices
+
     if (!result.correct) {
       const miss = classifyMiss(given, item.answer, item.misconceptions)
       // Kept for the film room later. Nothing is said about it now.
@@ -247,10 +253,9 @@ export function Tryout({ seed, onDone }: TryoutProps) {
         <div className="mx-auto mt-auto w-full max-w-md">
           {/* A fresh key per question: a new answer box, a new clock, and no
               chance of the previous keystroke landing in the next answer. */}
-          <QuestionInput
+          <AnswerInput
             key={session.state.index}
-            prompt={session.item.prompt}
-            promptWithSlot={session.item.promptWithSlot}
+            item={session.item}
             onSubmit={submit}
             disabled={settling}
           />

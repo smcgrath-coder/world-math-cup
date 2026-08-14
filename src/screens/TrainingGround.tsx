@@ -34,14 +34,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
 import { Character } from '../components/Character'
-import { QuestionInput } from '../components/QuestionInput'
+import { AnswerInput } from '../components/AnswerInput'
 import {
   LABELS_BY_STANDARD,
   STANDARDS_BY_STAT,
   STAT_LABELS,
   clampStat,
 } from '../components/stats'
-import { checkAnswer, classifyMiss, answerText } from '../engine/answer'
+import { answerText, checkAnswer, choiceCount, classifyMiss } from '../engine/answer'
 import type { MissClassification } from '../engine/answer'
 import { generatorFor } from '../engine/items/generators'
 import { makeRng } from '../engine/items/rng'
@@ -517,6 +517,11 @@ function Drill({
       context: 'training',
     }
 
+    // Recorded so the rating can be priced for luck. Without it a lucky
+    // true/false builds the card exactly as a typed answer would.
+    const choices = choiceCount(item.answer)
+    if (choices !== undefined) draft.choices = choices
+
     const miss = check.correct ? null : classifyMiss(given, item.answer, item.misconceptions)
     if (miss?.misconceptionId !== undefined) draft.misconceptionId = miss.misconceptionId
 
@@ -643,10 +648,9 @@ function Drill({
             <>
               {/* A fresh key per question: a new answer box, a new clock, and no
                   chance of the last keystroke landing in the next answer. */}
-              <QuestionInput
+              <AnswerInput
                 key={session.answered}
-                prompt={session.item.prompt}
-                promptWithSlot={session.item.promptWithSlot}
+                item={session.item}
                 onSubmit={submit}
                 disabled={result !== null}
               />
