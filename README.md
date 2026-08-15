@@ -191,8 +191,18 @@ checker sees a template literal, the tests fetch nothing, and `Character` is
 deliberately built to render *nothing at all* when an image fails, so the
 picture would simply never appear and nobody would be told why.
 
-First run will ask you to log in to Cloudflare and will create the worker.
-Afterwards, on the iPad: open the URL in Safari, Share → Add to Home Screen.
+`wrangler` is a dev dependency, so `npm install` is all the setup there is. It
+used to be called bare from the deploy script without being installed at all,
+which failed with `command not found` before it reached Cloudflare.
+
+First run opens a browser to log in and creates the worker. Afterwards, on the
+iPad: open the URL in Safari, Share → Add to Home Screen.
+
+To check the config without publishing:
+
+```bash
+npx wrangler deploy --dry-run
+```
 
 ## Still open
 
