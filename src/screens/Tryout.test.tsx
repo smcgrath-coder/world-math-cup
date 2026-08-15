@@ -73,6 +73,32 @@ function perfectRun(seed: number): string[] {
  */
 const ALWAYS_WRONG = '-1'
 
+/**
+ * A run where every single answer is wrong, computed the same way `perfectRun`
+ * computes a right one.
+ *
+ * `-1` was enough while every question was typed. It is not enough now: a
+ * picked question only accepts the options it offers, and any fallback the
+ * screen driver could pick might happen to be the key. So the wrong answer has
+ * to be chosen against the item, which means rebuilding the same stream the
+ * screen draws from — exactly as the perfect run already does.
+ */
+function hopelessRun(seed: number): string[] {
+  const rng = makeRng(itemSeedFor(seed))
+  let state = startTryout(seed)
+  const answers: string[] = []
+  while (!isComplete(state)) {
+    const { answer } = itemFor(currentStep(state)!, currentDifficulty(state), rng)
+    answers.push(
+      answer.kind === 'choice'
+        ? answer.options.find((_, i) => i !== answer.correct)!
+        : ALWAYS_WRONG,
+    )
+    state = recordAnswer(state, false)
+  }
+  return answers
+}
+
 function answer(text: string): void {
   giveAnyAnswer(text)
   act(() => {
@@ -252,7 +278,7 @@ describe('Tryout', () => {
 
   it('gives a card to a child who gets every single question wrong', () => {
     render(<Tryout seed={SEED} />)
-    for (let i = 0; i < TRYOUT_LENGTH; i++) answer(ALWAYS_WRONG)
+    for (const given of hopelessRun(SEED)) answer(given)
 
     // No dead end, no zero state, no red. He finished the session, so he has a
     // card, and every number on it has somewhere to go.

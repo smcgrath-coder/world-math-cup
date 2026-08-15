@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { assertGeneratorSound } from '../harness'
 import { makeRng } from '../rng'
 import { SHAPES, mt4g1 } from './mt4g1'
-import { canonicalOf } from '../../answer'
+import { answerText, canonicalOf } from '../../answer'
 
 /**
  * Redeclared rather than imported: a mismatch with the generator is a bug this
@@ -15,12 +15,25 @@ import { canonicalOf } from '../../answer'
 const RIGHT = 0
 const PARALLEL = 1
 const ACUTE = 2
+const IDENTIFY = 3
 
+const NARROWEST = 0
+const WIDEST = 1
+
+/** The three counting questions. `IDENTIFY` has its own, keyed on the corner. */
 const QUESTION: Record<number, string> = {
   [RIGHT]: 'How many right angles does this shape have?',
   [PARALLEL]: 'How many pairs of parallel sides does this shape have?',
   [ACUTE]: 'How many acute angles does this shape have?',
 }
+
+const IDENTIFY_QUESTION: Record<number, string> = {
+  [NARROWEST]: 'What kind of angle is the narrowest corner in this shape?',
+  [WIDEST]: 'What kind of angle is the widest corner in this shape?',
+}
+
+/** Every counting format, which is every format that answers with a number. */
+const COUNTING = [RIGHT, PARALLEL, ACUTE]
 
 const EASIEST = 12
 const HARDEST = 84
@@ -148,7 +161,28 @@ function figureAnswer(p: Record<string, number>): string {
   const v = verticesOf(p)
   if (p.ask === RIGHT) return String(countRightAngles(v))
   if (p.ask === PARALLEL) return String(countParallelPairs(v))
-  return String(countAcuteAngles(v))
+  if (p.ask === ACUTE) return String(countAcuteAngles(v))
+
+  /*
+   * For a choice, the independent answer is the correct option's text.
+   *
+   * Recomputed the same way as everything else here: the interior angle at a
+   * corner is the angle between the two sides leaving it, and the sign of their
+   * dot product names it — zero is square, positive is sharper, negative is
+   * wider. The dot product falls as the angle opens, so the widest corner is the
+   * smallest dot product and the narrowest is the largest.
+   */
+  const signs = v.map((corner, i) => {
+    const before = v[(i - 1 + v.length) % v.length]!
+    const after = v[(i + 1) % v.length]!
+    return dot(
+      [before[0] - corner[0], before[1] - corner[1]],
+      [after[0] - corner[0], after[1] - corner[1]],
+    )
+  })
+  const wanted = p.which === WIDEST ? Math.min(...signs) : Math.max(...signs)
+  if (wanted === 0) return 'Right'
+  return wanted < 0 ? 'Obtuse' : 'Acute'
 }
 
 /**
@@ -157,7 +191,8 @@ function figureAnswer(p: Record<string, number>): string {
  * would fail here.
  */
 function rebuildPrompt(p: Record<string, number>): string {
-  return `${SHAPES[p.shape!]!.describe(verticesOf(p))} ${QUESTION[p.ask!]}`
+  const question = p.ask === IDENTIFY ? IDENTIFY_QUESTION[p.which!]! : QUESTION[p.ask!]
+  return `${SHAPES[p.shape!]!.describe(verticesOf(p))} ${question}`
 }
 
 function itemsAt(difficulty: number, seeds = 120) {
@@ -213,11 +248,50 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
     }
   })
 
-  it('asks one of the three counting questions and says which', () => {
+  it('asks one of the four questions and says which', () => {
     for (const item of everyItem()) {
-      expect([RIGHT, PARALLEL, ACUTE], item.prompt).toContain(item.params.ask)
-      expect(item.prompt, item.prompt).toContain(QUESTION[item.params.ask!])
+      expect([RIGHT, PARALLEL, ACUTE, IDENTIFY], item.prompt).toContain(item.params.ask)
+      const question =
+        item.params.ask === IDENTIFY
+          ? IDENTIFY_QUESTION[item.params.which!]
+          : QUESTION[item.params.ask!]
+      expect(item.prompt, item.prompt).toContain(question)
     }
+  })
+
+  it('names the angle in words on the identify question, never with a number', () => {
+    // The half of the standard a count could never reach: "identify these in
+    // two-dimensional figures". There is no number that says "obtuse".
+    let seen = 0
+    for (const item of everyItem()) {
+      if (item.params.ask !== IDENTIFY) continue
+      seen++
+      expect(item.answer.kind, item.prompt).toBe('choice')
+      expect(item.answer.kind === 'choice' && item.answer.options, item.prompt).toEqual([
+        'Acute',
+        'Right',
+        'Obtuse',
+      ])
+    }
+    expect(seen, 'the identify question never came up').toBeGreaterThan(20)
+  })
+
+  it('gives all three names as the answer at some point', () => {
+    // Three options where one is never right is a two-way choice wearing a
+    // disguise, and a child who noticed would be right to stop reading it.
+    const answers = new Set(
+      everyItem(1, 60)
+        .filter((i) => i.params.ask === IDENTIFY)
+        .map((i) => answerText(i.answer)),
+    )
+    expect([...answers].sort()).toEqual(['Acute', 'Obtuse', 'Right'])
+  })
+
+  it('asks about the widest and the narrowest corner, not just one of them', () => {
+    const which = new Set(
+      everyItem().filter((i) => i.params.ask === IDENTIFY).map((i) => i.params.which),
+    )
+    expect([...which].sort()).toEqual([NARROWEST, WIDEST])
   })
 
   it('accepts zero as an answer on all three questions', () => {
@@ -226,6 +300,7 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
     // answer is always some. Every question has to be able to come back empty.
     const zeros = new Set<number>()
     for (const item of everyItem(1, 60)) {
+      if (!COUNTING.includes(item.params.ask!)) continue
       if (canonicalOf(item.answer) === '0') zeros.add(item.params.ask!)
     }
     expect([...zeros].sort(), 'some question can never answer zero').toEqual([
@@ -238,7 +313,7 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
   it('never names a mistake that is the right answer, zero included', () => {
     for (const item of everyItem(1, 60)) {
       for (const m of item.misconceptions) {
-        expect(m.signature, `${m.id} on "${item.prompt}"`).not.toBe(canonicalOf(item.answer))
+        expect(m.signature, `${m.id} on "${item.prompt}"`).not.toBe(answerText(item.answer))
       }
     }
   })
@@ -348,8 +423,19 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
 
   it('finishes the working with the number he has to type', () => {
     for (const item of everyItem(2, 30)) {
+      if (!COUNTING.includes(item.params.ask!)) continue
       expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toContain(
         `The answer is ${canonicalOf(item.answer)}.`,
+      )
+    }
+  })
+
+  it('finishes the identify working on the name he has to pick', () => {
+    for (const item of everyItem(2, 30)) {
+      if (item.params.ask !== IDENTIFY) continue
+      const corner = item.params.which === WIDEST ? 'widest' : 'narrowest'
+      expect(item.workedSteps[item.workedSteps.length - 1], item.prompt).toBe(
+        `So the ${corner} corner is ${answerText(item.answer).toLowerCase()}.`,
       )
     }
   })

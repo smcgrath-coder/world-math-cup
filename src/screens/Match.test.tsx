@@ -79,8 +79,12 @@ function mirror(o: Oracle, event: MatchEvent): void {
 }
 
 function type(o: Oracle, given: string): void {
-  giveAnyAnswer(given)
-  mirror(o, { type: 'answer', given, latencyMs: 1200 })
+  // Mirror what the screen actually took, not what we asked it to take. A
+  // deliberately impossible answer like `-1` is not one of the options on a
+  // picked question, so the driver falls back to one that is — and an oracle
+  // told `-1` would be modelling a different match from the second that happens.
+  const answered = giveAnyAnswer(given)
+  mirror(o, { type: 'answer', given: answered, latencyMs: 1200 })
 }
 
 const answerRight = (o: Oracle): void => type(o, answerText(o.state.currentItem!.answer))

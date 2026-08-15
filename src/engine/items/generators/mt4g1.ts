@@ -45,6 +45,40 @@ import type { Item, ItemGenerator, Misconception, Rng } from '../types'
 const RIGHT = 0
 const PARALLEL = 1
 const ACUTE = 2
+/**
+ * `IDENTIFY`: *"what kind of angle is the widest corner in this shape?"* —
+ * Acute, Right or Obtuse.
+ *
+ * The other three formats count, and a count is a number. This one names, and a
+ * name is not: *"identify these in two-dimensional figures"* is half of what the
+ * standard asks for and there was no way to ask it while an answer had to be a
+ * number. It is the first question here a child answers in words.
+ *
+ * The widest or narrowest corner rather than a nominated one, because there is
+ * no picture: singling out a corner would mean describing which corner, and
+ * every wording for that ("the top left one") assumes a drawing the child cannot
+ * see. Widest and narrowest need no picture at all.
+ *
+ * Ties do not matter. Every corner of a rectangle is 90 degrees, so the widest
+ * is 90 degrees, and the *kind* of angle is the same whichever one you mean.
+ */
+const IDENTIFY = 3
+
+/** Which corner `IDENTIFY` is about. */
+const NARROWEST = 0
+const WIDEST = 1
+
+const ACUTE_LABEL = 'Acute'
+const RIGHT_LABEL = 'Right'
+const OBTUSE_LABEL = 'Obtuse'
+
+/**
+ * Fixed order, always. The correct one moves around on its own because the
+ * shapes differ; shuffling as well would only mean two sources of randomness to
+ * reason about, and a child reading three options in a stable order can compare
+ * them to the last question instead of re-reading them.
+ */
+const ANGLE_OPTIONS = [ACUTE_LABEL, RIGHT_LABEL, OBTUSE_LABEL]
 
 const RANGE: [number, number] = [12, 84]
 
@@ -60,6 +94,11 @@ const QUESTION: Record<number, string> = {
   [RIGHT]: 'How many right angles does this shape have?',
   [PARALLEL]: 'How many pairs of parallel sides does this shape have?',
   [ACUTE]: 'How many acute angles does this shape have?',
+}
+
+const IDENTIFY_QUESTION: Record<number, string> = {
+  [NARROWEST]: 'What kind of angle is the narrowest corner in this shape?',
+  [WIDEST]: 'What kind of angle is the widest corner in this shape?',
 }
 
 /** What the question is counting, for sentences that have to say how many. */
@@ -509,14 +548,14 @@ function shapeIndex(id: string): number {
  */
 const BANDS: readonly { shapes: readonly string[]; asks: readonly number[] }[] = [
   { shapes: ['rectangle', 'square'], asks: [RIGHT, PARALLEL] },
-  { shapes: ['rectangle', 'square', 'right-triangle'], asks: [RIGHT, PARALLEL, ACUTE] },
+  { shapes: ['rectangle', 'square', 'right-triangle'], asks: [RIGHT, PARALLEL, ACUTE, IDENTIFY] },
   {
     shapes: ['right-triangle', 'obtuse-triangle', 'parallelogram', 'right-trapezoid'],
-    asks: [RIGHT, PARALLEL, ACUTE],
+    asks: [RIGHT, PARALLEL, ACUTE, IDENTIFY],
   },
   {
     shapes: ['obtuse-triangle', 'parallelogram', 'right-trapezoid', 'slanted-trapezoid'],
-    asks: [RIGHT, PARALLEL, ACUTE],
+    asks: [RIGHT, PARALLEL, ACUTE, IDENTIFY],
   },
 ]
 
@@ -540,6 +579,40 @@ function countFor(shape: ShapeSpec, ask: number): number {
   return shape.acuteAngles
 }
 
+/**
+ * The interior angle at each corner, as the sign of a dot product.
+ *
+ * Read straight off the coordinates rather than from the shape table, and with
+ * integer arithmetic only, so `0` really is a right angle rather than something
+ * that rounded to one. Negative is obtuse, positive is acute. The figures are
+ * all convex, which is what makes the angle between the two sides leaving a
+ * corner the *inside* angle.
+ */
+function cornerSigns(figure: readonly Point[]): number[] {
+  const n = figure.length
+  return figure.map((corner, i) => {
+    const before = figure[(i - 1 + n) % n]!
+    const after = figure[(i + 1) % n]!
+    const a: Point = [before[0] - corner[0], before[1] - corner[1]]
+    const b: Point = [after[0] - corner[0], after[1] - corner[1]]
+    return a[0] * b[0] + a[1] * b[1]
+  })
+}
+
+/**
+ * The kind of the widest or narrowest corner.
+ *
+ * Widest is the most negative dot product and narrowest the most positive,
+ * because the dot product falls as the angle opens. Comparing signs is enough to
+ * name the kind and no angle is ever measured in degrees.
+ */
+function identifyAnswer(figure: readonly Point[], which: number): string {
+  const signs = cornerSigns(figure)
+  const wanted = which === WIDEST ? Math.min(...signs) : Math.max(...signs)
+  if (wanted === 0) return RIGHT_LABEL
+  return wanted < 0 ? OBTUSE_LABEL : ACUTE_LABEL
+}
+
 export const mt4g1: ItemGenerator = {
   standardId: 'MT.4.G.1',
   label: 'Angles and parallel sides in shapes',
@@ -552,6 +625,7 @@ export const mt4g1: ItemGenerator = {
     const shape = SHAPES[shapeIdx]!
     const figure = rng.pick(shape.figures)
     const ask = rng.pick(BANDS[band]!.asks)
+    const which = rng.int(0, 1)
 
     const correct = countFor(shape, ask)
 
@@ -563,6 +637,11 @@ export const mt4g1: ItemGenerator = {
       params[`x${i}`] = point[0]
       params[`y${i}`] = point[1]
     })
+
+    if (ask === IDENTIFY) {
+      params.which = which
+      return identifyItem(shape, figure, which, d, params)
+    }
 
     return {
       standardId: 'MT.4.G.1',
@@ -578,6 +657,76 @@ export const mt4g1: ItemGenerator = {
       misconceptions: misconceptionsFor(shape, ask, figure.length),
     }
   },
+}
+
+/**
+ * "What kind of angle is the widest corner in this shape?"
+ *
+ * The one item in this generator answered in words rather than with a count.
+ */
+function identifyItem(
+  shape: ShapeSpec,
+  figure: readonly Point[],
+  which: number,
+  difficulty: number,
+  params: Record<string, number>,
+): Item {
+  const answer = identifyAnswer(figure, which)
+  const widest = which === WIDEST
+  const corner = widest ? 'widest' : 'narrowest'
+
+  return {
+    standardId: 'MT.4.G.1',
+    difficulty,
+    prompt: `${shape.describe(figure)} ${IDENTIFY_QUESTION[which]}`,
+    answer: { kind: 'choice', options: ANGLE_OPTIONS, correct: ANGLE_OPTIONS.indexOf(answer) },
+    params,
+    workedSteps: [
+      'A right angle is a square corner, like the corner of a book. An acute angle is ' +
+        'narrower than that — a sharp point. An obtuse angle is wider than that, opened out ' +
+        'past square.',
+      `Go round the corners and find the ${corner} one.`,
+      answer === RIGHT_LABEL
+        ? `The ${corner} corner here is a square corner, so it is a right angle.`
+        : answer === ACUTE_LABEL
+          ? `The ${corner} corner here is sharper than a square corner, so it is acute.`
+          : `The ${corner} corner here is opened out past square, so it is obtuse.`,
+      `So the ${corner} corner is ${answer.toLowerCase()}.`,
+    ],
+    misconceptions: [identifyMistake(answer, corner)],
+  }
+}
+
+/**
+ * The wrong name worth knowing, and why it happened.
+ *
+ * Only one is named. With three options there are two wrong answers, but only
+ * one of them is a *mistake* rather than a shrug — assuming a corner is square
+ * is what a child does when he has not looked, and it is the wrong answer to
+ * both of the other two. When the answer really is Right, the telling mistake is
+ * the other direction: reading a square corner as the sharp one.
+ */
+function identifyMistake(answer: string, corner: string): Misconception {
+  if (answer === RIGHT_LABEL) {
+    return {
+      id: 'sharper-than-it-is',
+      signature: ACUTE_LABEL,
+      label: 'Read a square corner as a sharp one',
+      explanation:
+        `The ${corner} corner here is exactly square — a perfect L, like the corner of a book. ` +
+        'Acute means narrower than square, so a corner has to be sharper than an L to be acute.',
+    }
+  }
+  return {
+    id: 'assumed-square',
+    signature: RIGHT_LABEL,
+    label: 'Assumed the corner was square',
+    explanation:
+      `Not every corner is a square corner. The ${corner} one here is ` +
+      (answer === ACUTE_LABEL
+        ? 'narrower than an L, which makes it acute rather than right.'
+        : 'wider than an L — opened out past square — which makes it obtuse rather than right.'),
+  }
 }
 
 interface Candidate {

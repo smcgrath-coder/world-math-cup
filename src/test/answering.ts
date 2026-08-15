@@ -44,21 +44,28 @@ export function giveAnswer(given: string): void {
  * anything, but a set of options only takes what it offers, so those fall back
  * to the first option rather than throwing.
  *
+ * Returns what was *actually* answered, which is not always what was asked for.
+ * A caller keeping its own model of the game in step — the match suite mirrors
+ * every answer into an oracle — has to mirror this rather than what it passed
+ * in, or the two diverge the first time a fallback fires and every later
+ * assertion is comparing two different matches.
+ *
  * Use `giveAnswer` wherever the test does care, which is most of them. Falling
  * back silently is only safe when the test is not asserting on correctness.
  */
-export function giveAnyAnswer(preferred: string): void {
+export function giveAnyAnswer(preferred: string): string {
   const box = screen.queryByRole('textbox')
   if (box !== null) {
     fireEvent.change(box, { target: { value: preferred } })
     fireEvent.keyDown(box, { key: 'Enter' })
-    return
+    return preferred
   }
 
   const options = screen.getAllByRole('radio')
   const wanted = options.find((option) => option.textContent === preferred) ?? options[0]!
   fireEvent.click(wanted)
   fireEvent.click(screen.getByTestId('choice-submit'))
+  return wanted.textContent ?? ''
 }
 
 /** Whether the question on screen is answered by picking rather than typing. */
