@@ -25,7 +25,11 @@
  *    "9/12 is the same amount as how many fourths?" Going *down* means dividing,
  *    which is the direction a child who has learnt the rule by pattern cannot do.
  *  - `WHICH_SAME` — pick the equivalent fraction out of three, where the two
- *    wrong ones are the two ways of doing half the job.
+ *    wrong ones are the two ways of doing half the job. Literally picked: this
+ *    is the one format here answered with a button rather than the keypad. It
+ *    was always a three-way choice, listed inside the sentence and typed back,
+ *    so nothing about the odds changed when it became one — only that
+ *    `guessFloor` can now see them and price a lucky third accordingly.
  *  - `WORD_SAME_CUT` — the same amount, cut two different ways, in context.
  *
  * Formats are banded, so the two that require dividing are out of reach at the
@@ -34,6 +38,7 @@
  */
 
 import { Rational as R } from '../../rational'
+import type { AnswerSpec } from '../../answer'
 import type { Item, ItemGenerator, Misconception, Rng } from '../types'
 
 /**
@@ -262,8 +267,7 @@ interface Core {
 interface Draft {
   prompt: string
   promptWithSlot?: string
-  /** Canonical answer, already in lowest terms. */
-  answer: string
+  answer: AnswerSpec
   /** Params this format needs beyond `a`, `b`, `mult`, `targetDen` and `format`. */
   extra: Record<string, number>
   workedSteps: string[]
@@ -291,7 +295,7 @@ export const mt4nf1: ItemGenerator = {
       difficulty: d,
       prompt: draft.prompt,
       ...(draft.promptWithSlot === undefined ? {} : { promptWithSlot: draft.promptWithSlot }),
-      answer: { kind: 'rational', canonical: draft.answer },
+      answer: draft.answer,
       params: { a, b, mult, targetDen: core.targetDen, format, ...draft.extra },
       workedSteps: draft.workedSteps,
       misconceptions: draft.misconceptions,
@@ -333,7 +337,7 @@ function missingNumerator({ a, b, mult, targetDen, scaledNum }: Core): Draft {
     // question asked, and an input sitting above `/12` is a better answer to
     // that than any wording is.
     promptWithSlot: `${a}/${b} = {}/${targetDen}`,
-    answer: String(scaledNum),
+    answer: { kind: 'rational', canonical: String(scaledNum) },
     extra: {},
     workedSteps: [
       `The bottom number went from ${b} to ${targetDen}. Ask: ${b} times what makes ${targetDen}?`,
@@ -393,7 +397,7 @@ function missingDenominator({ a, b, mult, targetDen, scaledNum }: Core): Draft {
   return {
     prompt: `${a}/${b} = ${scaledNum}/?. What is the missing bottom number?`,
     promptWithSlot: `${a}/${b} = ${scaledNum}/{}`,
-    answer: String(targetDen),
+    answer: { kind: 'rational', canonical: String(targetDen) },
     extra: { scaledNum },
     workedSteps: [
       `This time the top number is the one that changed: ${a} became ${scaledNum}. ` +
@@ -460,7 +464,7 @@ function scaleFactor({ a, b, mult, targetDen, scaledNum }: Core): Draft {
     prompt:
       `${a}/${b} = ${scaledNum}/${targetDen}. The top and the bottom were both ` +
       `multiplied by the same number. What number was it?`,
-    answer: String(mult),
+    answer: { kind: 'rational', canonical: String(mult) },
     extra: { scaledNum },
     workedSteps: [
       `Start with the bottom numbers: ${b} became ${targetDen}. Ask: ` +
@@ -518,7 +522,7 @@ function howManyPieces({ a, b, mult, targetDen, scaledNum }: Core): Draft {
   const many = PIECE_NAMES[b]?.[1] ?? 'pieces'
   return {
     prompt: `${scaledNum}/${targetDen} is the same amount as how many ${many}?`,
-    answer: String(a),
+    answer: { kind: 'rational', canonical: String(a) },
     extra: { scaledNum },
     workedSteps: [
       `The whole is cut into ${targetDen} pieces here, and one ${one} is ${mult} of them, ` +
@@ -573,10 +577,11 @@ function whichSame({ a, b, mult, targetDen, scaledNum }: Core, rng: Rng): Draft 
   options.splice(slot, 0, correct)
 
   return {
-    prompt:
-      `Which of these is the same amount as ${scaledNum}/${targetDen}: ` +
-      `${options[0]}, ${options[1]}, or ${options[2]}?`,
-    answer: correct,
+    // The three no longer appear in the sentence: they are the buttons. Listing
+    // them here as well would make a ten-year-old read the same three fractions
+    // twice before he could start.
+    prompt: `Which of these is the same amount as ${scaledNum}/${targetDen}?`,
+    answer: { kind: 'choice', options, correct: slot },
     extra: { scaledNum, slot },
     workedSteps: [
       `To find the same amount written with smaller numbers, divide the top and the bottom by ` +
@@ -586,33 +591,39 @@ function whichSame({ a, b, mult, targetDen, scaledNum }: Core, rng: Rng): Draft 
       `The other two only did half the job: ${topOnly} divided the top and left the bottom, and ` +
         `${bottomOnly} divided the bottom and left the top. Either way the amount changes.`,
     ],
-    misconceptions: keepUsable(
-      [
-        {
-          // Both of these are always genuinely wrong: dividing one number of a
-          // fraction and not the other cannot leave the amount alone. So this
-          // format always names two mistakes, one per wrong option.
-          id: 'divided-the-top-only',
-          value: new R(a, targetDen),
-          label: 'Divided the top and left the bottom',
-          explanation:
-            `${topOnly} kept pieces of the same size — ${targetDen} to the whole — and took ` +
-            `fewer of them, so it is a smaller amount than ${scaledNum}/${targetDen}. ` +
-            `Both numbers have to be divided by ${mult}: ${a}/${b}.`,
-        },
-        {
-          id: 'divided-the-bottom-only',
-          value: new R(scaledNum, b),
-          label: 'Divided the bottom and left the top',
-          explanation:
-            `${bottomOnly} made every piece bigger — only ${b} to the whole — while still ` +
-            `taking ${scaledNum} of them, so it is a much larger amount. Divide both numbers ` +
-            `by ${mult}: ${scaledNum} ${DIVIDE} ${mult} = ${a} and ${targetDen} ${DIVIDE} ` +
-            `${mult} = ${b}, which gives ${a}/${b}.`,
-        },
-      ],
-      correct,
-    ),
+    /*
+     * Named by the text on the button rather than by value.
+     *
+     * `keepUsable` signs a mistake with its reduced canonical form, which is
+     * right for a typed answer and wrong here: the option reads `2/12` and
+     * reduces to `1/6`, so a signature taken from the value would match nothing
+     * a child can press and the misconception would never fire. The harness
+     * catches exactly that as an unparseable signature.
+     */
+    misconceptions: [
+      {
+        // Both are always genuinely wrong: dividing one number of a fraction and
+        // not the other cannot leave the amount alone. So this format always
+        // names two mistakes, one per wrong option.
+        id: 'divided-the-top-only',
+        signature: topOnly,
+        label: 'Divided the top and left the bottom',
+        explanation:
+          `${topOnly} kept pieces of the same size — ${targetDen} to the whole — and took ` +
+          `fewer of them, so it is a smaller amount than ${scaledNum}/${targetDen}. ` +
+          `Both numbers have to be divided by ${mult}: ${a}/${b}.`,
+      },
+      {
+        id: 'divided-the-bottom-only',
+        signature: bottomOnly,
+        label: 'Divided the bottom and left the top',
+        explanation:
+          `${bottomOnly} made every piece bigger — only ${b} to the whole — while still ` +
+          `taking ${scaledNum} of them, so it is a much larger amount. Divide both numbers ` +
+          `by ${mult}: ${scaledNum} ${DIVIDE} ${mult} = ${a} and ${targetDen} ${DIVIDE} ` +
+          `${mult} = ${b}, which gives ${a}/${b}.`,
+      },
+    ],
   }
 }
 
@@ -630,7 +641,7 @@ function wordSameCut({ a, b, mult, targetDen, scaledNum }: Core, rng: Rng): Draf
       `${second} cut an identical ${thing} into ${targetDen} equal ${pieces}. ` +
       `How many of the smaller ${pieces} does ${second} need to take to have the ` +
       `same amount as ${first}?`,
-    answer: String(scaledNum),
+    answer: { kind: 'rational', canonical: String(scaledNum) },
     extra: { nameA, nameB, thing: thingIndex },
     workedSteps: [
       `${second} cut an identical ${thing} into more ${pieces}, so each of those ${pieces} is ` +

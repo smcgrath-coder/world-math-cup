@@ -20,7 +20,7 @@ npm run dev
 ```bash
 npx tsc -b --force   # must exit 0
 npm run lint         # must exit 0
-npm test             # 1166 tests
+npm test             # 1168 tests
 ```
 
 **`npm test` on its own is not enough.** vitest strips types without checking

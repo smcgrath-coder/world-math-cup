@@ -14,7 +14,7 @@ import {
   WORD_SAME_CUT,
   mt4nf1,
 } from './mt4nf1'
-import { canonicalOf } from '../../answer'
+import { answerText, canonicalOf } from '../../answer'
 
 /**
  * Independent of the generator, one route per format.
@@ -88,10 +88,9 @@ const rebuildPrompt = (p: Record<string, number>) => {
       )
     case HOW_MANY_PIECES:
       return `${scaledNum}/${targetDen} is the same amount as how many ${PIECE_NAMES[b!]![1]}?`
-    case WHICH_SAME: {
-      const [one, two, three] = optionsOf(p)
-      return `Which of these is the same amount as ${scaledNum}/${targetDen}: ${one}, ${two}, or ${three}?`
-    }
+    case WHICH_SAME:
+      // The three used to be listed here too. They are the buttons now.
+      return `Which of these is the same amount as ${scaledNum}/${targetDen}?`
     case WORD_SAME_CUT: {
       const first = NAMES[p.nameA!]
       const second = NAMES[p.nameB!]
@@ -221,13 +220,14 @@ describe('MT.4.NF.1 equivalent fractions', () => {
     // Each of these asks for a count or a factor. A fractional key would mean
     // the question and the answer box disagree about what is wanted.
     for (const item of everyItem()) {
-      const value = R.parse(canonicalOf(item.answer))!
       if (item.params.format === WHICH_SAME) {
-        expect(value.isInteger(), item.prompt).toBe(false)
-        expect(canonicalOf(item.answer), item.prompt).toBe(`${item.params.a}/${item.params.b}`)
-      } else {
-        expect(value.isInteger(), item.prompt).toBe(true)
+        // The recognition format is picked, not typed, so it has no numeric key.
+        expect(item.answer.kind, item.prompt).toBe('choice')
+        expect(answerText(item.answer), item.prompt).toBe(`${item.params.a}/${item.params.b}`)
+        continue
       }
+      expect(item.answer.kind, item.prompt).toBe('rational')
+      expect(R.parse(canonicalOf(item.answer))!.isInteger(), item.prompt).toBe(true)
     }
   })
 
@@ -256,12 +256,17 @@ describe('MT.4.NF.1 equivalent fractions', () => {
     for (const item of items) {
       const options = optionsOf(item.params)
       positions.add(item.params.slot!)
+      // The item really carries them now, so the independent rebuild above is
+      // checked against the buttons a child will actually see rather than
+      // against a sentence.
+      expect(item.answer.kind, item.prompt).toBe('choice')
+      expect(item.answer.kind === 'choice' && item.answer.options, item.prompt).toEqual(options)
       expect(new Set(options).size, item.prompt).toBe(3)
       // Distinct as strings is not enough — two options that are the same
       // *amount* would make the question have two right answers.
       const values = options.map((o) => R.parse(o)!.toString())
       expect(new Set(values).size, item.prompt).toBe(3)
-      expect(options[item.params.slot!], item.prompt).toBe(canonicalOf(item.answer))
+      expect(options[item.params.slot!], item.prompt).toBe(answerText(item.answer))
       // And no option is one whole written as a fraction. `3/3` can be crossed
       // off at a glance without thinking about equivalence at all, which would
       // quietly turn three options into two.
@@ -282,8 +287,11 @@ describe('MT.4.NF.1 equivalent fractions', () => {
       expect(ids, item.prompt).toContain('divided-the-top-only')
       expect(ids, item.prompt).toContain('divided-the-bottom-only')
       const byId = new Map(item.misconceptions.map((m) => [m.id, m.signature]))
-      expect(byId.get('divided-the-top-only')).toBe(new R(a!, targetDen!).toString())
-      expect(byId.get('divided-the-bottom-only')).toBe(new R(scaledNum!, b!).toString())
+      // Signed with the text on the button, not the reduced value. `2/12`
+      // reduces to `1/6`, which is not something a child can press, so a
+      // signature taken from the value would never fire.
+      expect(byId.get('divided-the-top-only')).toBe(`${a}/${targetDen}`)
+      expect(byId.get('divided-the-bottom-only')).toBe(`${scaledNum}/${b}`)
     }
   })
 
@@ -339,7 +347,7 @@ describe('MT.4.NF.1 equivalent fractions', () => {
     for (const item of everyItem()) {
       expect(item.misconceptions.length, item.prompt).toBeGreaterThan(0)
       for (const m of item.misconceptions) {
-        expect(m.signature, item.prompt).not.toBe(canonicalOf(item.answer))
+        expect(m.signature, item.prompt).not.toBe(answerText(item.answer))
       }
     }
   })

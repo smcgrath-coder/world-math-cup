@@ -10,7 +10,7 @@ import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft } from '../store/storage'
 import type { Attempt } from '../store/types'
 import type { CardStat } from '../curriculum/standards.generated'
-import { canonicalOf } from '../engine/answer'
+import { answerText } from '../engine/answer'
 import { giveAnyAnswer } from '../test/answering'
 
 const SEED = 31_415
@@ -279,8 +279,8 @@ describe('TrainingGround', () => {
       const first = oracle.item
       expect(screen.getByText(first.prompt)).toBeInTheDocument()
 
-      submit(canonicalOf(first.answer))
-      oracle.record(canonicalOf(first.answer), true)
+      submit(answerText(first.answer))
+      oracle.record(answerText(first.answer), true)
 
       // Straight on to the next one. No worked steps, nothing to tap through.
       expect(nextOne()).toBeNull()
@@ -298,7 +298,7 @@ describe('TrainingGround', () => {
 
       for (const step of item.workedSteps) expect(screen.getByText(step)).toBeInTheDocument()
       // The answer, said plainly. Training is where you find out.
-      expect(said()).toContain(canonicalOf(item.answer))
+      expect(said()).toContain(answerText(item.answer))
       // Still here until he says he is done reading.
       expect(nextOne()).toBeInTheDocument()
       expect(screen.queryByRole('textbox')).toBeNull()
@@ -331,9 +331,13 @@ describe('TrainingGround', () => {
     })
 
     it('re-asks rather than scoring an answer it could not read', () => {
+      // Defending rather than dribbling, because every question under it is
+      // typed. An unreadable answer is a thing that can only happen to a text
+      // box: a picked question hands back one of its own options, so `banana`
+      // would simply never arrive. Fractions now include picked questions.
       render(<TrainingGround seed={SEED} />)
-      enter(/dribbling/i)
-      const oracle = oracleFor('DRI', undefined)
+      enter(/defending/i)
+      const oracle = oracleFor('DEF', undefined)
 
       submit('banana')
 
@@ -362,7 +366,7 @@ describe('TrainingGround', () => {
 
       const opened = statValue()
       for (let i = 0; i < 14; i++) {
-        const given = canonicalOf(oracle.item.answer)
+        const given = answerText(oracle.item.answer)
         submit(given)
         oracle.record(given, true)
       }
@@ -461,9 +465,11 @@ describe('TrainingGround', () => {
     })
 
     it('does not let a stray second tap skip past the explanation', () => {
+      // Defending: this reaches for the text box directly, and every question
+      // under Defending is typed.
       render(<TrainingGround seed={SEED} />)
-      enter(/dribbling/i)
-      const oracle = oracleFor('DRI', undefined)
+      enter(/defending/i)
+      const oracle = oracleFor('DEF', undefined)
       const item = oracle.item
 
       const field = screen.getByRole('textbox')

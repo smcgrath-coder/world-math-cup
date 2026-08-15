@@ -771,7 +771,7 @@ function enterTackleBack(
 ): MatchState {
   if (isOver(state)) return fullTime(state)
 
-  const scaffold = chooseScaffold(original, given, miss ?? UNCERTAIN, deps)
+  const scaffold = chooseScaffold(original, given, miss ?? UNCERTAIN, deps, state.shotChoice === null)
 
   return pauseIfHalftime({
     ...state,
@@ -862,8 +862,18 @@ export function chooseScaffold(
   given: string,
   miss: MissClassification,
   deps: MatchDeps,
+  /**
+   * False while a shot is pending.
+   *
+   * A shot already re-offers the question after the ball is won back — that is
+   * what a retake is — so parrying it would be a second helping of the same
+   * mechanism, and a narrower one. It would also quietly change what a hard shot
+   * costs: the courage track pays for choosing the bicycle kick, and the retake
+   * is meant to be the shot he chose rather than an easier version of it.
+   */
+  allowParry = true,
 ): Item {
-  const narrowed = withoutTheOptionHePicked(item, given)
+  const narrowed = allowParry ? withoutTheOptionHePicked(item, given) : null
   if (narrowed !== null) return narrowed
 
   const conceptual = miss.kind !== 'near'

@@ -3,7 +3,8 @@
 > **Status, 14 Aug 2026.** Built, including the tackle-back narrowing.
 > `MT.4.OA.4` asks its yes/no question as one, `MT.4.NF.2`'s comparisons are
 > explicit two-option choices, and `MT.4.G.1` names an angle from three.
-> `MT.4.NF.1` was in the plan and is not built.
+> `MT.4.NF.1`'s `WHICH_SAME` is a three-option choice too — it was always one,
+> listed inside the sentence and typed back.
 >
 > One thing the parry turned up that the design below did not anticipate: winning
 > a tackle-back restores the question that was missed, so a parried choice would
@@ -129,7 +130,7 @@ it reads as "these ones don't count".
 | `MT.4.OA.4` | `REMAINDER` splits: a true/false *"is 348 a multiple of 6?"*, and a numeric *"what is the remainder?"* — a good question once it is not doing two jobs. The `0 means yes` sentence goes. |
 | `MT.4.NF.2` | The two-way formats become explicit two-option choices, which makes the guessing visible and now correctly priced. A new three-option `>` `<` `=` format finally assesses the half of the standard that was unreachable. |
 | `MT.4.G.1` | Vocabulary and shape properties, which is where multiple choice is the honest format rather than a compromise. |
-| `MT.4.NF.1` | True/false on equivalence: *"is 2/3 the same amount as 6/9?"* |
+| `MT.4.NF.1` | `WHICH_SAME` becomes a real three-option choice. It already offered three fractions and had him type one back, so this changed the interaction and the pricing, not the question. A true/false on equivalence was the original plan and was not needed once this was seen for what it was. |
 
 ## Input
 
