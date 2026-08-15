@@ -1,5 +1,11 @@
 # Multiple choice and true/false
 
+> **Status, 14 Aug 2026.** Built, except the tackle-back narrowing in "Two places
+> the decision did not survive contact with the code" below. `MT.4.OA.4` asks its
+> yes/no question as one, `MT.4.NF.2`'s comparisons are explicit two-option
+> choices, and `MT.4.G.1` names an angle from three. `MT.4.NF.1` was in the plan
+> and is not built.
+
 Rion's dad, on the question that prompted this:
 
 > The "answer 0 for yes" is clunky.

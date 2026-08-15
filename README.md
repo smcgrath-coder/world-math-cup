@@ -49,6 +49,10 @@ the rating maths can change and history recomputes.
   answer: unicode minus, `7÷8`, thousands commas, trailing units, unreduced
   fractions. Also classifies a *wrong* answer as a named misconception, a near
   miss, off target, or unreadable.
+- **Two kinds of answer.** Most are typed. Some are *picked*, because some
+  questions have a judgement for an answer rather than a value — "is 348 a
+  multiple of 6?" and "what kind of angle is this?" are not numbers. True/false
+  is a two-option choice, not a separate kind.
 - **`engine/elo.ts`** — one rating system for his skills, the opponents and the
   world rank, because they are the same thing.
 - **`engine/items/`** — 13 generators producing questions procedurally, so he
@@ -125,6 +129,26 @@ wrong key that appeared at one difficulty and one seed out of thousands.
 If you add a generator, write `verify` from the standard's definition. Copying
 the generator's expression passes by construction and proves nothing.
 
+## Guessing
+
+A true/false is right half the time from nothing, and a three-option question a
+third of the time. `updateRating` is told the odds and lifts the expected score
+to meet them, so a correct pick earns a fraction of what a typed answer earns and
+a wrong one costs more. Measured over 30 right answers at difficulty 50: **68.9
+typed, 66.0 four-option, 62.2 true/false.**
+
+`difficultyForSuccess` is deliberately *not* corrected. Selection targets 75%
+success on merit; correcting there would serve items he only knows half the time,
+and a coin flip is the calibration this project rejected at the start.
+
+The log carries the option count (`Attempt.choices`), because ratings are derived
+long after the item is gone. It is optional, so every attempt written before
+choices existed still scores as the typed answer it was.
+
+**Expect these questions to move his card less.** That is honest, and it is also
+the kind of thing a ten-year-old notices. Worth watching whether it reads as
+"these ones don't count".
+
 ## Design decisions that look odd until you know why
 
 These exist because of the specific child. He is capable but freezes in front of
@@ -163,11 +187,11 @@ Afterwards, on the iPad: open the URL in Safari, Share → Add to Home Screen.
 
 - The bicycle kick can draw a trivial question for a weak player — the label
   promises spectacle and the arithmetic does not always deliver.
-- `MT.4.NF.2` is a two-way choice, so chance alone scores 50% and that standard's
-  rating reads high.
 - The inline answer box wraps onto its own line below 380px.
 - The tournament loop opens softly, so the seam is continuous but quiet. It reads
   as a musical intro rather than a fault, but a later loop point would be tidier.
 - No character art on screen yet, though the files exist.
+- The tackle-back does not yet narrow a choice. The design is written down in
+  `docs/plans/2026-08-14-choice-questions-design.md`; nothing implements it.
 - Grade-5 generators. Deliberate: they should arrive through the autumn at
   roughly the pace they arrive in his classroom.
