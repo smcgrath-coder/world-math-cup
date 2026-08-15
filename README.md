@@ -193,6 +193,22 @@ Afterwards, on the iPad: open the URL in Safari, Share → Add to Home Screen.
 - The inline answer box wraps onto its own line below 380px.
 - The tournament loop opens softly, so the seam is continuous but quiet. It reads
   as a musical intro rather than a fault, but a later loop point would be tidier.
-- No character art on screen yet, though the files exist.
-- Grade-5 generators. Deliberate: they should arrive through the autumn at
-  roughly the pace they arrive in his classroom.
+- The eight captain portraits are not drawn yet. The six principals are, and
+  four of them are on screen — `docs/art/placement.md` says where the other two
+  go and why they are waiting.
+
+## Deliberately not built
+
+Different from the list above: these were decided against, not left undone.
+
+- **Grade-5 generators.** They should arrive through the autumn at roughly the
+  pace they arrive in his classroom, not all at once in August.
+- **`MT.4.NF.2`'s `>` `=` `<` format.** The standard names it and the answer
+  model can grade it, so this is a choice rather than a limit. Comparing is
+  covered seven ways already; a symbol question would add only which way the
+  arrow points, which is notation rather than reasoning, and a question he gets
+  wrong for forgetting a convention reads as a trick. `=` would also mean
+  rebuilding a pool that is strictly ordered by construction. Full reasoning in
+  `docs/plans/2026-08-14-choice-questions-design.md`.
+- **Sound effects.** Music only, and the settings copy says so, because an
+  unexpected noise is the thing worth warning this child about.

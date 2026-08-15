@@ -6,12 +6,28 @@
  * fraction such as 1/2 ... Record the results of comparisons with symbols >, =,
  * or <, and justify the conclusions."
  *
- * `AnswerSpec` only knows how to grade a number, so the recording half of the
- * standard cannot be a `>` typed into the answer box — it would be unparseable
- * and the checker would refuse to score it. Instead he types the fraction the
- * question asks about, which is the same judgement expressed as a value. The
- * justifying half lives in the worked steps, which always show the common
- * denominator rather than only announcing the winner.
+ * **The recording half is deliberately not assessed, and that is now a choice
+ * rather than a limit.** It used to be a limit: `AnswerSpec` could only grade a
+ * number, so a `>` was unparseable and the checker would have refused to score
+ * it. `AnswerSpec` grades a picked option now, and `MT.4.G.1` uses exactly that
+ * to have him name an angle — so a `>` `=` `<` format is buildable. It was not
+ * built, on purpose:
+ *
+ *  - The *comparing* is covered seven ways below, which is more formats than any
+ *    other generator carries. What a symbol question would add is only which way
+ *    the arrow points.
+ *  - That is a notation convention rather than reasoning. A question this child
+ *    gets wrong because he forgot which way the alligator faces teaches him
+ *    nothing about fractions and reads as a trick, and the whole design leans
+ *    away from gotchas.
+ *  - `=` could never be the answer without rebuilding the pool. Every pair here
+ *    is strictly ordered by construction — 7200 sampled pairs contain no equal
+ *    one, and the smallest gap is a ninetieth — and `ranked` depends on that, as
+ *    does the band tuning. Offering `=` as an option that is never right would be
+ *    a dead third a ten-year-old finds in an afternoon.
+ *
+ * The judging half lives in the worked steps instead, which always show the
+ * common denominator rather than only announcing the winner.
  *
  * Seven formats. This generator used to ask "which is greater" and nothing else,
  * and Rion — ten years old, plays this — said the questions felt repetitive:

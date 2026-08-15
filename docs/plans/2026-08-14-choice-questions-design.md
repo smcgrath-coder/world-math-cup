@@ -128,9 +128,38 @@ it reads as "these ones don't count".
 | Generator | Change |
 |---|---|
 | `MT.4.OA.4` | `REMAINDER` splits: a true/false *"is 348 a multiple of 6?"*, and a numeric *"what is the remainder?"* — a good question once it is not doing two jobs. The `0 means yes` sentence goes. |
-| `MT.4.NF.2` | The two-way formats become explicit two-option choices, which makes the guessing visible and now correctly priced. A new three-option `>` `<` `=` format finally assesses the half of the standard that was unreachable. |
+| `MT.4.NF.2` | The two-way formats become explicit two-option choices, which makes the guessing visible and now correctly priced. The three-option `>` `<` `=` format planned here was **not built** — see below. |
 | `MT.4.G.1` | Vocabulary and shape properties, which is where multiple choice is the honest format rather than a compromise. |
 | `MT.4.NF.1` | `WHICH_SAME` becomes a real three-option choice. It already offered three fractions and had him type one back, so this changed the interaction and the pricing, not the question. A true/false on equivalence was the original plan and was not needed once this was seen for what it was. |
+
+## The symbol format, and why it was dropped
+
+Planned above, and decided against once the rest was working. Scott's call, with
+this reasoning.
+
+It is no longer blocked. `AnswerSpec` grades a picked option, and `MT.4.G.1` uses
+exactly that to name an angle, so `3/5 ? 5/8` with `>` `=` `<` is buildable.
+
+It was dropped because what it would add is not mathematics. The comparing is
+covered seven ways — more formats than any other generator carries, because Rion
+said this standard felt repetitive — and a symbol question adds only which way
+the arrow points. That is a notation convention, and a question this child gets
+wrong because he forgot the convention teaches him nothing about fractions and
+reads as a trick.
+
+`=` is also expensive. Every pair the pool draws is strictly ordered by
+construction: 7200 sampled pairs contain no equal one and the smallest gap is a
+ninetieth. `ranked` depends on that and so does the band tuning, so `=` means
+rebuilding the pool, choosing what share of items should answer `=` — too few and
+he learns it is never right, too many and the standard becomes an equivalence
+drill, which is `MT.4.NF.1`'s job — and writing its own worked steps and its own
+named mistake.
+
+A cheaper `>` / `<` version with no `=` needs no pool work at all. It was not
+built either, for the first reason rather than the second.
+
+**If this is ever revisited, the order to think about it in is: is the notation
+worth a question at all, and only then how to get `=` honestly.**
 
 ## Input
 
