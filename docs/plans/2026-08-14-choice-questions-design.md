@@ -1,10 +1,15 @@
 # Multiple choice and true/false
 
-> **Status, 14 Aug 2026.** Built, except the tackle-back narrowing in "Two places
-> the decision did not survive contact with the code" below. `MT.4.OA.4` asks its
-> yes/no question as one, `MT.4.NF.2`'s comparisons are explicit two-option
-> choices, and `MT.4.G.1` names an angle from three. `MT.4.NF.1` was in the plan
-> and is not built.
+> **Status, 14 Aug 2026.** Built, including the tackle-back narrowing.
+> `MT.4.OA.4` asks its yes/no question as one, `MT.4.NF.2`'s comparisons are
+> explicit two-option choices, and `MT.4.G.1` names an angle from three.
+> `MT.4.NF.1` was in the plan and is not built.
+>
+> One thing the parry turned up that the design below did not anticipate: winning
+> a tackle-back restores the question that was missed, so a parried choice would
+> have been asked a *third* time and paid for twice. `MatchState.parried` records
+> that the tackle-back was the same question, and winning it moves on instead.
+> Losing is unchanged — he still gets the worked solution.
 
 Rion's dad, on the question that prompted this:
 

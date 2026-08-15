@@ -28,7 +28,7 @@ import { PRESSURES, TARGET_SUCCESS } from './select'
 import type { Pressure } from './select'
 import { expectedScore } from './elo'
 import type { Opponent } from '../data/opponents'
-import { answerText, canonicalOf } from './answer'
+import { answerText, canonicalOf, checkAnswer } from './answer'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -39,6 +39,24 @@ import { answerText, canonicalOf } from './answer'
  * the ranking at 92. Both are tier 1, so `concedeAfter` and `tackleBackMs` are
  * identical between them and every assertion here holds for either.
  */
+/**
+ * An answer that is not one of any question's options, so `chooseScaffold` takes
+ * the ordinary route rather than the parried-choice one. The parry has its own
+ * tests further down.
+ */
+const NOT_AN_OPTION = '-1'
+
+/** The first item any generator produces with exactly `n` options. */
+function aChoiceWith(n: number): Item {
+  for (const standardId of RATED_STANDARD_IDS) {
+    for (let seed = 0; seed < 200; seed++) {
+      const item = generatorFor(standardId)!.generate(50, makeRng(seed))
+      if (item.answer.kind === 'choice' && item.answer.options.length === n) return item
+    }
+  }
+  throw new Error(`no generator produces a ${n}-option question`)
+}
+
 const BRAZIL = OPPONENTS.find((o) => o.id === 'brazil')!
 /** Tier 4, rating 56: the gentlest opponent on the roster. */
 const CURACAO = OPPONENTS.find((o) => o.id === 'curacao')!
@@ -677,8 +695,8 @@ describe('who we are playing', () => {
     // the rung back into the match harder. `playerOverall` is what drives the
     // bias, so a scaffold that reacted to the opponent would move with it.
     const item = generatorFor('MT.4.NBT.5')!.generate(60, makeRng(1))
-    const behind = chooseScaffold(item, { kind: 'near' }, { ...makeDeps(3), playerOverall: 20 })
-    const ahead = chooseScaffold(item, { kind: 'near' }, { ...makeDeps(3), playerOverall: 90 })
+    const behind = chooseScaffold(item, NOT_AN_OPTION, { kind: 'near' }, { ...makeDeps(3), playerOverall: 20 })
+    const ahead = chooseScaffold(item, NOT_AN_OPTION, { kind: 'near' }, { ...makeDeps(3), playerOverall: 90 })
 
     expect(behind.difficulty).toBe(ahead.difficulty)
     expect(behind.standardId).toBe(ahead.standardId)
@@ -1425,7 +1443,7 @@ describe('the tackle-back scaffold', () => {
   it('repairs the computation after a near miss: same standard, easier', () => {
     for (const standardId of RATED_STANDARD_IDS) {
       const item = anItem(standardId)
-      const scaffold = chooseScaffold(item, { kind: 'near', relativeError: 0.05 }, makeDeps())
+      const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'near', relativeError: 0.05 }, makeDeps())
 
       expect(scaffold.standardId, standardId).toBe(standardId)
       expect(scaffold.difficulty, standardId).toBeLessThan(item.difficulty)
@@ -1437,7 +1455,7 @@ describe('the tackle-back scaffold', () => {
     for (const standardId of RATED_STANDARD_IDS) {
       const item = anItem(standardId, generatorFor(standardId)!.range[0])
       const deps: MatchDeps = { ...makeDeps(), ratings: ratingsAt(99) }
-      const scaffold = chooseScaffold(item, { kind: 'near' }, deps)
+      const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'near' }, deps)
       expect(scaffold.difficulty, standardId).toBeLessThanOrEqual(item.difficulty)
     }
   })
@@ -1445,8 +1463,153 @@ describe('the tackle-back scaffold', () => {
   it('goes back to the concept after an off-target miss', () => {
     for (const [standardId, prerequisite] of Object.entries(PREREQUISITE)) {
       const item = anItem(standardId)
-      const scaffold = chooseScaffold(item, { kind: 'off', relativeError: 40 }, makeDeps())
+      const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'off', relativeError: 40 }, makeDeps())
       expect(scaffold.standardId).toBe(prerequisite)
+    }
+  })
+
+  it('parries a three-way choice: same question, without the one he picked', () => {
+    /*
+     * The only place a tackle-back shows the same question twice.
+     *
+     * For a typed answer the useful help is a rung down onto the standard
+     * underneath. For a choice it is not: he has three names in front of him and
+     * has ruled none of them out, so the honest second chance is the same
+     * question with his mistake taken off the board.
+     */
+    const item = aChoiceWith(3)
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const wrong = options.find((_, i) => i !== (item.answer.kind === 'choice' && item.answer.correct))!
+
+    const scaffold = chooseScaffold(item, wrong, { kind: 'off' }, makeDeps())
+
+    expect(scaffold.prompt).toBe(item.prompt)
+    expect(scaffold.answer.kind).toBe('choice')
+    const left = scaffold.answer.kind === 'choice' ? scaffold.answer.options : []
+    expect(left).toHaveLength(2)
+    expect(left).not.toContain(wrong)
+  })
+
+  it('still points the key at the right answer after removing an option', () => {
+    /*
+     * The hazard in the whole idea. Removing an option shifts every index after
+     * it by one, so a key adjusted by hand rather than recomputed points at the
+     * wrong answer — and a tackle-back that marks the correct answer wrong is the
+     * worst thing this game can do, arriving at the exact moment he is trying to
+     * recover.
+     *
+     * Checked against every wrong option of every choice the generators produce,
+     * not against one example.
+     */
+    let checked = 0
+    for (const standardId of RATED_STANDARD_IDS) {
+      // Several difficulties, not one: which formats a generator offers is banded,
+      // and a single difficulty samples one band's worth of them.
+      for (const difficulty of [25, 40, 55, 70]) {
+        for (let seed = 0; seed < 300; seed++) {
+        const item = generatorFor(standardId)!.generate(difficulty, makeRng(seed))
+        if (item.answer.kind !== 'choice' || item.answer.options.length < 3) continue
+        const { options, correct } = item.answer
+        const key = options[correct]!
+
+        for (const [i, wrong] of options.entries()) {
+          if (i === correct) continue
+          const scaffold = chooseScaffold(item, wrong, { kind: 'off' }, makeDeps())
+          expect(scaffold.answer.kind).toBe('choice')
+          if (scaffold.answer.kind !== 'choice') continue
+          expect(scaffold.answer.options[scaffold.answer.correct], `${item.prompt} minus ${wrong}`).toBe(key)
+          expect(checkAnswer(key, scaffold.answer).correct).toBe(true)
+          expect(checkAnswer(wrong, scaffold.answer).unparseable).toBe(true)
+          checked++
+        }
+        }
+      }
+    }
+    expect(checked, 'no three-option items were produced at all').toBeGreaterThan(100)
+  })
+
+  it('does not narrow a true/false, because one option left is the answer', () => {
+    // Two cannot be narrowed to one without handing it over. It falls through to
+    // the ordinary scaffold rather than losing the ball: "a miss never ends a
+    // possession" outranks any special case here.
+    const item = aChoiceWith(2)
+    const wrong = item.answer.kind === 'choice' ? item.answer.options[1 - item.answer.correct]! : ''
+
+    const scaffold = chooseScaffold(item, wrong, { kind: 'off' }, makeDeps())
+    expect(scaffold.prompt).not.toBe(item.prompt)
+  })
+
+  it('ignores an answer that was never on the board', () => {
+    // Impossible from ChoiceInput, so it means something is wrong rather than
+    // that he guessed oddly. Take the ordinary route.
+    const item = aChoiceWith(3)
+    expect(chooseScaffold(item, 'nonsense', { kind: 'off' }, makeDeps()).prompt).not.toBe(item.prompt)
+  })
+
+  it('never removes the correct option', () => {
+    // Guarded even though `given` always comes from a wrong answer: deleting the
+    // key would leave a question with no right answer on it.
+    const item = aChoiceWith(3)
+    const key = item.answer.kind === 'choice' ? item.answer.options[item.answer.correct]! : ''
+    const scaffold = chooseScaffold(item, key, { kind: 'off' }, makeDeps())
+    expect(scaffold.prompt).not.toBe(item.prompt)
+  })
+
+  it('does not ask a parried question a third time', () => {
+    /*
+     * An ordinary tackle-back asks something *else*, so the question he missed
+     * still needs answering and comes back after he wins the ball. A parried one
+     * is the same question, so winning it has already answered it — bringing it
+     * back would be asking a ten-year-old the same thing three times in a row and
+     * paying him twice for it.
+     *
+     * Driven through `reduce` rather than asserted on `chooseScaffold`, because
+     * the bug this prevents lives in what happens *after* the tackle-back.
+     */
+    const item = aChoiceWith(3)
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
+    const wrong = options.find((_, i) => i !== correct)!
+
+    const deps = makeDeps(5)
+    let s = start(deps)
+    // Put the parried item on screen as the live question.
+    s = { ...s, phase: 'question', currentItem: item, possession: 'us', zone: 'midfield' }
+
+    s = answer(s, wrong, deps)
+    expect(s.phase, 'a miss should open a tackle-back').toBe('tackleback')
+    expect(s.parried, 'a three-option miss should be parried').toBe(true)
+    expect(s.currentItem!.prompt).toBe(item.prompt)
+    expect(s.currentItem!.answer.kind === 'choice' && s.currentItem!.answer.options).toHaveLength(2)
+
+    // Win it. The same question must not come back.
+    s = answer(s, options[correct]!, deps)
+    expect(s.parried).toBe(false)
+    if (s.phase === 'question') expect(s.currentItem!.prompt).not.toBe(item.prompt)
+  })
+
+  it('still shows the working when a parried tackle-back is lost', () => {
+    // Losing is unchanged either way. The worked steps are the teaching, and a
+    // flag that skipped them would have traded the lesson for the tidiness.
+    const item = aChoiceWith(3)
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
+    const wrong = options.find((_, i) => i !== correct)!
+    const otherWrong = options.find((o, i) => i !== correct && o !== wrong)!
+
+    const deps = makeDeps(5)
+    let s = start(deps)
+    s = { ...s, phase: 'question', currentItem: item, possession: 'us', zone: 'midfield' }
+
+    s = answer(s, wrong, deps)
+    expect(s.phase).toBe('tackleback')
+    s = answer(s, otherWrong, deps)
+
+    if (s.phase !== 'fulltime') {
+      expect(s.phase).toBe('feedback')
+      expect(s.currentItem!.prompt).toBe(item.prompt)
+      expect(s.currentItem!.workedSteps.length).toBeGreaterThan(0)
+      expect(s.parried).toBe(false)
     }
   })
 
@@ -1454,6 +1617,7 @@ describe('the tackle-back scaffold', () => {
     const item = anItem('MT.4.NBT.5')
     const scaffold = chooseScaffold(
       item,
+      NOT_AN_OPTION,
       { kind: 'misconception', misconceptionId: 'whatever' },
       makeDeps(),
     )
@@ -1463,7 +1627,7 @@ describe('the tackle-back scaffold', () => {
   it('falls back to the same standard, much easier, when nothing sits underneath it', () => {
     const standardId = RATED_STANDARD_IDS.find((id) => PREREQUISITE[id] === undefined)!
     const item = anItem(standardId, 70)
-    const scaffold = chooseScaffold(item, { kind: 'off', relativeError: 40 }, makeDeps())
+    const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'off', relativeError: 40 }, makeDeps())
 
     expect(scaffold.standardId).toBe(standardId)
     expect(scaffold.difficulty).toBeLessThan(item.difficulty)

@@ -20,7 +20,7 @@ npm run dev
 ```bash
 npx tsc -b --force   # must exit 0
 npm run lint         # must exit 0
-npm test             # 1161 tests
+npm test             # 1166 tests
 ```
 
 **`npm test` on its own is not enough.** vitest strips types without checking
@@ -161,7 +161,10 @@ recess and caused meltdowns.
   because the ball is already loose — running out cannot take anything he still
   holds. A switch in settings removes it entirely.
 - **A miss never ends a possession.** It loosens the ball, and the tackle-back
-  is a scaffolded sub-question, so the second chance does the teaching.
+  is a scaffolded sub-question, so the second chance does the teaching. On a
+  question with three or more options it is instead the *same* question with the
+  option he picked taken off it — the keeper parried it — because a rung down is
+  no help to a child who has not ruled anything out yet.
 - **Choosing the hard shot counts before anyone knows if it went in.** A missed
   bicycle kick is celebrated. That is the mechanism for manufacturing "I proved
   I could", on purpose and repeatedly.
@@ -191,7 +194,5 @@ Afterwards, on the iPad: open the URL in Safari, Share → Add to Home Screen.
 - The tournament loop opens softly, so the seam is continuous but quiet. It reads
   as a musical intro rather than a fault, but a later loop point would be tidier.
 - No character art on screen yet, though the files exist.
-- The tackle-back does not yet narrow a choice. The design is written down in
-  `docs/plans/2026-08-14-choice-questions-design.md`; nothing implements it.
 - Grade-5 generators. Deliberate: they should arrive through the autumn at
   roughly the pace they arrive in his classroom.

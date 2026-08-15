@@ -329,6 +329,20 @@ export interface MatchState {
   /** The item the tackle-back is scaffolding, to restore after winning it. */
   pendingItem: Item | null
   /**
+   * The tackle-back on screen is the *same* question with one option removed,
+   * rather than an easier question from underneath it.
+   *
+   * It changes what winning means. An ordinary tackle-back asks something else,
+   * so the question he missed still has to be answered and comes back. A parried
+   * one is the question he missed, so answering it *is* answering it — bringing
+   * it back a third time would be asking a ten-year-old the same thing three
+   * times in a row and paying him twice for it.
+   *
+   * Losing is unchanged either way: he still gets the worked solution, which is
+   * why `pendingItem` is kept rather than cleared to signal this.
+   */
+  parried: boolean
+  /**
    * How the last miss looked. Narration and scaffold choice only — it never
    * touches scoring or possession.
    */
@@ -526,6 +540,7 @@ export function startMatch(opts: {
     phase: 'question',
     currentItem: null,
     pendingItem: null,
+    parried: false,
     lastMiss: null,
     defensiveStops: 0,
     clearances: 0,
@@ -652,7 +667,7 @@ function applyAnswer(
   if (inTackleBack) {
     return judged.correct ? winTackleBack(logged, deps) : loseTackleBack(logged, deps)
   }
-  return judged.correct ? onCorrect(logged, deps) : onMiss(logged, item, miss, deps)
+  return judged.correct ? onCorrect(logged, deps) : onMiss(logged, item, judged.given, miss, deps)
 }
 
 /** A correct answer, with the ball. */
@@ -711,6 +726,8 @@ function onCorrect(state: MatchState, deps: MatchDeps): MatchState {
 function onMiss(
   state: MatchState,
   item: Item,
+  /** What he answered, so a parried choice can drop the option he picked. */
+  given: string,
   miss: MissClassification | null,
   deps: MatchDeps,
 ): MatchState {
@@ -739,7 +756,7 @@ function onMiss(
     )
   }
 
-  return enterTackleBack(s, item, miss, deps)
+  return enterTackleBack(s, item, given, miss, deps)
 }
 
 // ---------------------------------------------------------------------------
@@ -748,16 +765,20 @@ function onMiss(
 function enterTackleBack(
   state: MatchState,
   original: Item,
+  given: string,
   miss: MissClassification | null,
   deps: MatchDeps,
 ): MatchState {
   if (isOver(state)) return fullTime(state)
 
+  const scaffold = chooseScaffold(original, given, miss ?? UNCERTAIN, deps)
+
   return pauseIfHalftime({
     ...state,
     phase: 'tackleback',
-    currentItem: chooseScaffold(original, miss ?? UNCERTAIN, deps),
+    currentItem: scaffold,
     pendingItem: original,
+    parried: scaffold.prompt === original.prompt,
     courage: { ...state.courage, tackleBacksFaced: state.courage.tackleBacksFaced + 1 },
   })
 }
@@ -770,7 +791,11 @@ function winTackleBack(state: MatchState, deps: MatchDeps): MatchState {
     courage: { ...state.courage, tackleBacksWon: state.courage.tackleBacksWon + 1 },
   }
   const original = won.pendingItem
-  if (original === null) return serveQuestion(won, deps)
+  // A parried tackle-back *was* the question he missed, so winning it has
+  // answered it. Anything else asks him the same thing a third time.
+  if (original === null || won.parried) {
+    return serveQuestion({ ...won, pendingItem: null, parried: false }, deps)
+  }
   if (isOver(won)) return fullTime(won)
 
   return pauseIfHalftime({ ...won, phase: 'question', currentItem: original, pendingItem: null })
@@ -798,7 +823,13 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
   const original = lost.pendingItem
   if (original === null) return serveQuestion(lost, deps)
 
-  return pauseIfHalftime({ ...lost, phase: 'feedback', currentItem: original, pendingItem: null })
+  return pauseIfHalftime({
+    ...lost,
+    phase: 'feedback',
+    currentItem: original,
+    pendingItem: null,
+    parried: false,
+  })
 }
 
 /**
@@ -814,6 +845,11 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
  *    problem: knowing he added the denominators tells us he is doing the wrong
  *    thing confidently, not that he slipped.
  *
+ * Before any of that: a **parried choice**. If he picked one of three or more
+ * options, the second chance is the same question without the option he chose —
+ * see `withoutTheOptionHePicked`. It is the one case where a rung down is not the
+ * useful help, because he has ruled nothing out yet.
+ *
  * The opponent gets no say here, deliberately. Brazil may ask harder questions
  * and allow less time; Brazil may not make the help harder. A scaffold pitched
  * against the opposition instead of against the child would stop being a
@@ -821,7 +857,15 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
  *
  * Exported because it is the one decision in this file worth testing directly.
  */
-export function chooseScaffold(item: Item, miss: MissClassification, deps: MatchDeps): Item {
+export function chooseScaffold(
+  item: Item,
+  given: string,
+  miss: MissClassification,
+  deps: MatchDeps,
+): Item {
+  const narrowed = withoutTheOptionHePicked(item, given)
+  if (narrowed !== null) return narrowed
+
   const conceptual = miss.kind !== 'near'
   const target = conceptual ? SCAFFOLD_TARGET_OFF : SCAFFOLD_TARGET_NEAR
   const standardId = conceptual ? (PREREQUISITE[item.standardId] ?? item.standardId) : item.standardId
@@ -835,6 +879,54 @@ export function chooseScaffold(item: Item, miss: MissClassification, deps: Match
   }
 
   return generator.generate(scaffoldDifficulty(generator, item, target, deps), deps.rng)
+}
+
+/**
+ * The keeper parries it: the same question again, without the option he chose.
+ *
+ * This is the one place a tackle-back shows the *same* question twice. Everywhere
+ * else it drops to the standard underneath and asks something easier, because for
+ * a typed answer the useful help is a rung down. For a choice it is not: the
+ * child has three names in front of him and has ruled none of them out, and the
+ * honest second chance is the same question with his mistake taken off the board.
+ * It also needs no generation, so there is no risk of a scaffold that does not
+ * match what he was doing.
+ *
+ * `null` — meaning fall through to the ordinary scaffold — in three cases:
+ *
+ *  - a typed answer, which has no options to remove;
+ *  - **two options**, because removing one leaves the answer sitting alone and
+ *    handing it over is not help. Those get the ordinary scaffold rather than
+ *    losing the ball, because "a miss never ends a possession" outranks any
+ *    special case for this child;
+ *  - an answer that is not one of the options, which should be impossible from
+ *    `ChoiceInput` and therefore means something is wrong rather than that he
+ *    guessed oddly.
+ *
+ * The correct option is never the one removed: `picked` came from a wrong answer,
+ * and the guard is here anyway because a bug that quietly deleted the right
+ * answer would be unanswerable.
+ */
+function withoutTheOptionHePicked(item: Item, given: string): Item | null {
+  const { answer } = item
+  if (answer.kind !== 'choice') return null
+  if (answer.options.length < 3) return null
+
+  const picked = answer.options.indexOf(given.trim())
+  if (picked === -1 || picked === answer.correct) return null
+
+  const options = answer.options.filter((_, i) => i !== picked)
+  return {
+    ...item,
+    answer: {
+      kind: 'choice',
+      options,
+      // Recomputed rather than adjusted: the index shifts by one only when the
+      // removed option sat before it, and getting that arithmetic wrong points
+      // the key at the wrong answer.
+      correct: options.indexOf(answer.options[answer.correct]!),
+    },
+  }
 }
 
 function scaffoldDifficulty(

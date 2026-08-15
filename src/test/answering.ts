@@ -68,5 +68,13 @@ export function giveAnyAnswer(preferred: string): string {
   return wanted.textContent ?? ''
 }
 
-/** Whether the question on screen is answered by picking rather than typing. */
-export const isChoiceOnScreen = (): boolean => screen.queryByRole('textbox') === null
+/**
+ * Whether there is a question on screen waiting to be answered, of either kind.
+ *
+ * Drivers that step a match along have to ask this rather than looking for the
+ * text box. One of them checked for a text box and quietly did nothing when a
+ * picked question came up, so the match stalled and the test failed several
+ * assertions later on a symptom rather than the cause.
+ */
+export const hasQuestionOnScreen = (): boolean =>
+  screen.queryByRole('textbox') !== null || screen.queryAllByRole('radio').length > 0

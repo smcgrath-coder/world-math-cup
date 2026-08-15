@@ -5,7 +5,7 @@ import { TRACK_NAMES } from '../audio/music'
 import { CELEBRATION_MS } from '../screens/Match'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft, Country } from '../store/storage'
-import { giveAnyAnswer } from '../test/answering'
+import { giveAnyAnswer, hasQuestionOnScreen } from '../test/answering'
 
 const COUNTRY: Country = {
   name: 'Rionia',
@@ -95,7 +95,7 @@ function push(): void {
       return
     }
   }
-  if (screen.queryByRole('textbox') !== null) answer(ALWAYS_WRONG)
+  if (hasQuestionOnScreen()) answer(ALWAYS_WRONG)
 }
 
 /** Which question the match says it is on. Fourteen once the whistle has gone. */
