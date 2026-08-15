@@ -9,11 +9,12 @@
     "build:standards": "node scripts/build-standards.mjs",
     "build:icons": "node scripts/build-icons.mjs",
     "rerank": "node scripts/rerank-opponents.mjs",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run build && npm run check:assets && wrangler deploy",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:assets": "node scripts/check-assets.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

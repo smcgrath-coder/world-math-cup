@@ -180,8 +180,16 @@ is in `docs/plans/2026-08-02-world-math-cup-design.md`.
 ## Deploying
 
 ```bash
-npm run deploy   # builds, then wrangler deploy
+npm run deploy   # builds, checks every asset, then wrangler deploy
 ```
+
+The asset check is not ceremony. macOS filesystems are case-insensitive and
+Cloudflare serves case-sensitively, so `Coach.png` referenced as
+`/art/coach.png` works perfectly on the machine it was built on and 404s in
+production — which already happened here once. Nothing else catches it: the type
+checker sees a template literal, the tests fetch nothing, and `Character` is
+deliberately built to render *nothing at all* when an image fails, so the
+picture would simply never appear and nobody would be told why.
 
 First run will ask you to log in to Cloudflare and will create the worker.
 Afterwards, on the iPad: open the URL in Safari, Share → Add to Home Screen.
