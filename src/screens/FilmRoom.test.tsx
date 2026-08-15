@@ -243,6 +243,76 @@ describe('FilmRoom', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('reviewing a picked question', () => {
+  /** The first item any generator produces that is answered by picking. */
+  function aChoice(): Item {
+    for (const standardId of ['MT.4.G.1', 'MT.4.NF.1', 'MT.4.NF.2', 'MT.4.OA.4']) {
+      for (let seed = 0; seed < 300; seed++) {
+        const item = generatorFor(standardId)!.generate(50, makeRng(seed))
+        if (item.answer.kind === 'choice' && item.answer.options.length >= 3) return item
+      }
+    }
+    throw new Error('no picked question with three options')
+  }
+
+  it('shows what he was choosing between', () => {
+    /*
+     * A picked question does not carry its options in its prompt — they are the
+     * buttons. That is right on the pitch and wrong here: reviewing "which of
+     * these is the same amount as 9/12?" with nothing underneath it is a question
+     * with its answers cut off.
+     */
+    const item = aChoice()
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
+    const wrong = options.find((_, i) => i !== correct)!
+
+    const played = [play(item, wrong)]
+    render(<FilmRoom matchId="m1" questions={questionsOf(...played)} />)
+
+    const list = screen.getByTestId('film-options')
+    expect(list.textContent).toBeTruthy()
+    for (const option of options) expect(list.textContent).toContain(option)
+  })
+
+  it('marks the one he went for without ever calling it wrong', () => {
+    // The rule this whole screen is built on. A cross or the word "wrong" here
+    // would undo it at the one moment he is most braced for bad news.
+    const item = aChoice()
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
+    const wrong = options.find((_, i) => i !== correct)!
+
+    const played = [play(item, wrong)]
+    render(<FilmRoom matchId="m1" questions={questionsOf(...played)} />)
+
+    expect(screen.getByTestId('film-options').textContent).toContain('you went here')
+    for (const pattern of [/\bwrong\b/i, /\bincorrect\b/i, /[✗✘✕×]\s/, /\bfailed\b/i]) {
+      expect(said()).not.toMatch(pattern)
+    }
+  })
+
+  it('does not print "you put down" twice for a picked question', () => {
+    // The options list already says which one he went for.
+    const item = aChoice()
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
+    const wrong = options.find((_, i) => i !== correct)!
+
+    const played = [play(item, wrong)]
+    render(<FilmRoom matchId="m1" questions={questionsOf(...played)} />)
+    expect(said()).not.toMatch(/you put down/i)
+  })
+
+  it('still says what he put down for a typed question', () => {
+    const item = itemFor('MT.4.NBT.5', 40)
+    const played = [play(item, '-1')]
+    render(<FilmRoom matchId="m1" questions={questionsOf(...played)} />)
+    expect(said()).toMatch(/you put down/i)
+    expect(screen.queryByTestId('film-options')).toBeNull()
+  })
+})
+
 describe('grouping', () => {
   it('files fluency under pace, which belongs to no domain', () => {
     expect(statFor('FLU.MULT')).toBe('PAC')

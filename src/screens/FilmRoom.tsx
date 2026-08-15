@@ -281,6 +281,8 @@ function MissCard({ miss }: { miss: Miss }) {
   const line = missLine(attempt, item)
   const topic = LABELS_BY_STANDARD[attempt.standardId] ?? attempt.standardId
   const gave = attempt.given.trim()
+  /** Narrowed once here: the options are read twice below and inside a callback. */
+  const choice = item?.answer.kind === 'choice' ? item.answer : null
 
   return (
     <div data-testid="film-miss" className="rounded-2xl bg-black/25 p-4 ring-1 ring-white/10">
@@ -295,7 +297,44 @@ function MissCard({ miss }: { miss: Miss }) {
       ) : (
         <>
           <p className="mt-2 text-lg font-bold text-white/85">{item.prompt}</p>
-          {gave.length > 0 && (
+
+          {/*
+            What he was choosing between.
+            
+            A picked question does not carry its options in the prompt — they are
+            the buttons, and printing them in the sentence as well would make him
+            read the same three fractions twice before he could start. That is
+            right on the pitch and wrong here: reviewing "which of these is the
+            same amount as 9/12?" with nothing underneath it is a question with
+            its answers cut off.
+          */}
+          {choice !== null && (
+            <ul data-testid="film-options" className="mt-2 flex flex-wrap gap-1.5">
+              {choice.options.map((option, i) => {
+                const his = option === attempt.given.trim()
+                const key = i === choice.correct
+                return (
+                  <li
+                    key={option}
+                    className={
+                      key
+                        ? 'rounded-lg bg-gold/15 px-2.5 py-1 text-sm font-bold text-gold'
+                        : his
+                          ? 'rounded-lg bg-white/10 px-2.5 py-1 text-sm font-bold text-white/70 ring-1 ring-white/25'
+                          : 'rounded-lg bg-black/20 px-2.5 py-1 text-sm text-white/45'
+                    }
+                  >
+                    {option}
+                    {/* Never a cross, and never the word wrong. It says which one
+                        he went for and lets the gold say which one it was. */}
+                    {his && !key && <span className="ml-1.5 text-[11px] font-bold">you went here</span>}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          {gave.length > 0 && choice === null && (
             <p className="mt-1 text-sm font-semibold text-white/55">{`You put down ${gave}.`}</p>
           )}
 
