@@ -14,7 +14,7 @@ import {
   WORD_MORE,
   mt4nf2,
 } from './mt4nf2'
-import { canonicalOf } from '../../answer'
+import { answerText, canonicalOf, guessFloor } from '../../answer'
 
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b)
@@ -223,13 +223,49 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     }
   })
 
-  it('answers with one of the two fractions on screen, except when it asks for a number', () => {
+  it('offers exactly the two fractions on screen, except when it asks for a number', () => {
     for (const item of everyItem()) {
       const { n1, d1, n2, d2 } = item.params as Record<string, number>
       if (item.params.format === COMMON_DENOMINATOR) {
+        // The one format chance cannot help with, so it stays typed.
+        expect(item.answer.kind, item.prompt).toBe('rational')
         expect(R.parse(canonicalOf(item.answer))!.isInteger(), item.prompt).toBe(true)
       } else {
-        expect([`${n1}/${d1}`, `${n2}/${d2}`], item.prompt).toContain(canonicalOf(item.answer))
+        expect(item.answer.kind, item.prompt).toBe('choice')
+        // In prompt order. Ranked order would put the answer in the same place
+        // every time.
+        expect(item.answer.kind === 'choice' && item.answer.options, item.prompt).toEqual([
+          `${n1}/${d1}`,
+          `${n2}/${d2}`,
+        ])
+        expect([`${n1}/${d1}`, `${n2}/${d2}`], item.prompt).toContain(answerText(item.answer))
+      }
+    }
+  })
+
+  it('puts the right answer first about half the time', () => {
+    // A choice whose key is usually in slot one is a pattern a ten-year-old finds
+    // in an afternoon.
+    const firsts = everyItem()
+      .filter((i) => i.answer.kind === 'choice')
+      .map((i) => (i.answer.kind === 'choice' ? i.answer.correct : -1))
+    const share = firsts.filter((c) => c === 0).length / firsts.length
+
+    expect(firsts.length).toBeGreaterThan(500)
+    expect(share, 'share with the answer first').toBeGreaterThan(0.35)
+    expect(share, 'share with the answer first').toBeLessThan(0.65)
+  })
+
+  it('prices the guessing it always had', () => {
+    // These six formats were two-way choices when the answer was typed, too --
+    // two fractions on screen and one of them wanted back. The generator's header
+    // called that a known validity gap. Nothing about the odds changed; what
+    // changed is that the rating model can now see them.
+    for (const item of everyItem()) {
+      if (item.params.format === COMMON_DENOMINATOR) {
+        expect(guessFloor(item.answer), item.prompt).toBe(0)
+      } else {
+        expect(guessFloor(item.answer), item.prompt).toBe(0.5)
       }
     }
   })
@@ -299,7 +335,7 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       if (!TWO_FRACTION_FORMATS.includes(item.params.format!)) continue
       const { n1, d1, n2, d2 } = item.params as Record<string, number>
-      const correct = canonicalOf(item.answer)
+      const correct = answerText(item.answer)
       const other = correct === `${n1}/${d1}` ? `${n2}/${d2}` : `${n1}/${d1}`
       expect(item.misconceptions, item.prompt).toHaveLength(1)
       expect(item.misconceptions[0]!.signature, item.prompt).toBe(other)
@@ -315,7 +351,7 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       if (![GREATER, WORD_MORE, CLOSER_TO_ONE].includes(item.params.format!)) continue
       const { n1, d1, d2 } = item.params as Record<string, number>
-      const loserIsFirst = canonicalOf(item.answer) !== `${n1}/${d1}`
+      const loserIsFirst = answerText(item.answer) !== `${n1}/${d1}`
       const loserDen = loserIsFirst ? d1! : d2!
       const winnerDen = loserIsFirst ? d2! : d1!
       const id = item.misconceptions[0]!.id
@@ -339,7 +375,7 @@ describe('MT.4.NF.2 comparing two fractions', () => {
     for (const item of everyItem()) {
       if (![GREATER, WORD_MORE].includes(item.params.format!)) continue
       const { n1, d1, n2, d2 } = item.params as Record<string, number>
-      const loserIsFirst = canonicalOf(item.answer) !== `${n1}/${d1}`
+      const loserIsFirst = answerText(item.answer) !== `${n1}/${d1}`
       const loser = loserIsFirst ? [n1!, d1!] : [n2!, d2!]
       const winner = loserIsFirst ? [n2!, d2!] : [n1!, d1!]
       const bothBigger = loser[0]! > winner[0]! && loser[1]! > winner[1]!

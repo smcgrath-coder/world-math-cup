@@ -15,7 +15,8 @@ import { QUESTIONS_PER_MATCH, reduce, startMatch } from '../engine/match'
 import type { MatchDeps, MatchEvent, MatchState, Stakes } from '../engine/match'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { Attempt, ShotChoice } from '../store/types'
-import { canonicalOf } from '../engine/answer'
+import { answerText } from '../engine/answer'
+import { giveAnyAnswer } from '../test/answering'
 
 const SEED = 20_260
 /** Tier 4, rating 56: the gentlest side on the roster. */
@@ -78,13 +79,11 @@ function mirror(o: Oracle, event: MatchEvent): void {
 }
 
 function type(o: Oracle, given: string): void {
-  const field = screen.getByRole('textbox')
-  fireEvent.change(field, { target: { value: given } })
-  fireEvent.keyDown(field, { key: 'Enter' })
+  giveAnyAnswer(given)
   mirror(o, { type: 'answer', given, latencyMs: 1200 })
 }
 
-const answerRight = (o: Oracle): void => type(o, canonicalOf(o.state.currentItem!.answer))
+const answerRight = (o: Oracle): void => type(o, answerText(o.state.currentItem!.answer))
 const answerWrong = (o: Oracle): void => type(o, ALWAYS_WRONG)
 
 function press(name: RegExp): void {
@@ -143,14 +142,38 @@ const classNames = (): string[] =>
  * column. If the numpad moves on screen between questions, one of those has to
  * have changed.
  */
+/**
+ * Where the question area hangs in the DOM, as a chain of classes up to the body.
+ *
+ * Measured from the area rather than from the submit key itself, because the
+ * submit key is no longer always the same element: a typed question ends in the
+ * numpad's `Enter` and a picked one in the options' `That one`, and those
+ * legitimately carry different classes. Comparing the buttons would now be
+ * comparing the two inputs rather than testing that either of them stays put.
+ *
+ * The area is what Match.tsx pins — its column carries `mt-auto`, so the bottom
+ * of the block is fixed and the commit control sits under his thumb whichever
+ * kind of question is showing. `commitIsLast` covers the other half of that:
+ * being in a fixed area is worth nothing if the button wanders inside it.
+ */
 function numpadAnchor(): string {
-  const enter = screen.getByRole('button', { name: /submit answer/i })
+  const area = screen.getByTestId('question-area')
   const chain: string[] = []
-  for (let el: HTMLElement | null = enter; el !== null && el !== document.body; el = el.parentElement) {
+  for (let el: HTMLElement | null = area; el !== null && el !== document.body; el = el.parentElement) {
     const last = el.parentElement?.lastElementChild === el
     chain.push(`${el.tagName}[${el.getAttribute('class') ?? ''}]last=${String(last)}`)
   }
   return chain.join(' < ')
+}
+
+/** The commit control is the bottom-most thing inside the question area. */
+function commitIsLast(): boolean {
+  const area = screen.getByTestId('question-area')
+  const commit = screen.getByRole('button', { name: /submit answer|that one/i })
+  for (let el: HTMLElement | null = commit; el !== null && el !== area; el = el.parentElement) {
+    if (el.parentElement?.lastElementChild !== el) return false
+  }
+  return true
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +301,7 @@ describe('Match', () => {
     expect(o.state.phase).toBe('feedback')
     const item = o.state.currentItem!
     for (const step of item.workedSteps) expect(said()).toContain(step)
-    expect(said()).toContain(canonicalOf(item.answer))
+    expect(said()).toContain(answerText(item.answer))
 
     expect(said()).not.toMatch(/\bwrong\b|\bincorrect\b|\bfail(ed|ure)?\b/i)
     expect(said()).not.toMatch(/[✗✘]/)
@@ -351,16 +374,19 @@ describe('Match', () => {
     expect(screen.getByTestId('tackleback-bar')).toBeInTheDocument()
   })
 
-  it('keeps the numpad exactly where it was between questions', () => {
+  it('keeps the answer controls exactly where they were between questions', () => {
     const o = play()
     const anchors = [numpadAnchor()]
+    expect(commitIsLast()).toBe(true)
 
     answerRight(o)
     settle()
     anchors.push(numpadAnchor())
+    expect(commitIsLast()).toBe(true)
 
     answerWrong(o)
     settle()
+    expect(commitIsLast()).toBe(true)
     // A tackle-back puts a whole card above the question; the numpad still may
     // not move, because it hangs off the bottom of the column rather than the
     // top of it.
@@ -395,7 +421,7 @@ describe('Match', () => {
 
   it('writes every attempt by the whistle', () => {
     const o = play()
-    playOut(o, (s) => canonicalOf(s.state.currentItem!.answer))
+    playOut(o, (s) => answerText(s.state.currentItem!.answer))
 
     expect(o.state.phase).toBe('fulltime')
     expect(said()).toMatch(/full time/i)
@@ -482,7 +508,7 @@ describe('Match', () => {
 
   it('ends on a scoreline he can read out', () => {
     const o = play()
-    playOut(o, (s) => canonicalOf(s.state.currentItem!.answer))
+    playOut(o, (s) => answerText(s.state.currentItem!.answer))
 
     expect(said()).toMatch(new RegExp(`${o.state.score[0]}–${o.state.score[1]}`))
     expect(screen.getByRole('button', { name: /off the pitch/i })).toBeInTheDocument()
@@ -506,7 +532,9 @@ describe('Match', () => {
     render(<Match opponent={opponent} stakes="friendly" seed={SEED} matchId="m1" onDone={handed} />)
     const o = open(opponent, 'friendly', 'm1')
 
-    playOut(o, (s) => (s.state.questionsAsked % 3 === 0 ? ALWAYS_WRONG : canonicalOf(s.state.currentItem!.answer)))
+    playOut(o, (s) =>
+      s.state.questionsAsked % 3 === 0 ? ALWAYS_WRONG : answerText(s.state.currentItem!.answer),
+    )
     press(/off the pitch/i)
 
     expect(handed).toHaveBeenCalledTimes(1)

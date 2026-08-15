@@ -15,7 +15,8 @@ import {
   recordAnswer,
   startTryout,
 } from '../engine/tryout'
-import { canonicalOf } from '../engine/answer'
+import { answerText } from '../engine/answer'
+import { giveAnyAnswer } from '../test/answering'
 
 const SEED = 4242
 
@@ -60,9 +61,7 @@ function perfectRun(seed: number): string[] {
   let state = startTryout(seed)
   const answers: string[] = []
   while (!isComplete(state)) {
-    answers.push(
-      canonicalOf(itemFor(currentStep(state)!, currentDifficulty(state), rng).answer),
-    )
+    answers.push(answerText(itemFor(currentStep(state)!, currentDifficulty(state), rng).answer))
     state = recordAnswer(state, true)
   }
   return answers
@@ -75,9 +74,7 @@ function perfectRun(seed: number): string[] {
 const ALWAYS_WRONG = '-1'
 
 function answer(text: string): void {
-  const field = screen.getByRole('textbox')
-  fireEvent.change(field, { target: { value: text } })
-  fireEvent.keyDown(field, { key: 'Enter' })
+  giveAnyAnswer(text)
   act(() => {
     vi.advanceTimersByTime(SETTLE_MS)
   })

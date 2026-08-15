@@ -11,6 +11,7 @@ import type { AttemptDraft } from '../store/storage'
 import type { Attempt } from '../store/types'
 import type { CardStat } from '../curriculum/standards.generated'
 import { canonicalOf } from '../engine/answer'
+import { giveAnyAnswer } from '../test/answering'
 
 const SEED = 31_415
 
@@ -61,9 +62,7 @@ function enter(stat: RegExp, topic?: RegExp): void {
 
 /** Answer the question on screen and let whatever follows it settle. */
 function submit(text: string): void {
-  const field = screen.getByRole('textbox')
-  fireEvent.change(field, { target: { value: text } })
-  fireEvent.keyDown(field, { key: 'Enter' })
+  giveAnyAnswer(text)
   act(() => {
     vi.advanceTimersByTime(ACK_MS)
   })

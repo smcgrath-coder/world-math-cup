@@ -30,9 +30,15 @@
  *    two amounts of the same size thing.
  *  - `COMMON_DENOMINATOR` asks for the method rather than the verdict: the
  *    smallest number both bottom numbers go into. It is the only format here a
- *    child cannot guess — the other six are two-way choices, and the design doc
- *    records that as a known validity gap on this standard. It does not close
- *    the gap, but it is one question in the diet where chance scores nothing.
+ *    child cannot guess, and the only one still answered by typing.
+ *
+ * The other six are two-way choices and always were — two fractions on screen and
+ * one of them wanted back — so chance has always scored 50% on them. That used to
+ * be recorded here as a known validity gap, because the answer was *typed* and
+ * nothing downstream could tell this question apart from one with a million
+ * possible answers. They are now explicit choices, which changes none of the odds
+ * and everything about what the rating knows: `guessFloor` reads 0.5, and
+ * `updateRating` stops counting a coin landing the right way up as evidence.
  *
  * Note the consequence for misconceptions on the two-way formats: with two
  * fractions on screen and one of them wanted back, there is exactly one wrong
@@ -42,6 +48,7 @@
  */
 
 import { Rational as R } from '../../rational'
+import type { AnswerSpec } from '../../answer'
 import type { Item, ItemGenerator, Misconception, Rng } from '../types'
 
 /**
@@ -311,8 +318,7 @@ interface Side {
 /** What a format decides, before the common parts are wrapped around it. */
 interface Draft {
   prompt: string
-  /** Canonical answer, already in lowest terms. */
-  answer: string
+  answer: AnswerSpec
   /** Params this format needs beyond the pair and `format`. */
   extra: Record<string, number>
   workedSteps: string[]
@@ -336,7 +342,7 @@ export const mt4nf2: ItemGenerator = {
       standardId: 'MT.4.NF.2',
       difficulty: d,
       prompt: draft.prompt,
-      answer: { kind: 'rational', canonical: draft.answer },
+      answer: draft.answer,
       params: { ...pair, format, ...draft.extra },
       workedSteps: draft.workedSteps,
       misconceptions: draft.misconceptions,
@@ -378,6 +384,26 @@ function ranked({ n1, d1, n2, d2 }: Pair): [Side, Side] {
 
 const asText = (s: Side): string => `${s.n}/${s.d}`
 
+/**
+ * The two fractions as options, in the order the prompt shows them.
+ *
+ * **Prompt order, never ranked order.** Listing the winner first would put the
+ * answer in the same place every time, which is a pattern a ten-year-old finds
+ * in an afternoon.
+ *
+ * These six formats were always two-way choices — two fractions on screen and one
+ * of them wanted back — so chance has always scored 50% here, and this
+ * generator's own header called that "a known validity gap" while the answer was
+ * typed. Nothing about the guessing changes by making it a choice. What changes
+ * is that `guessFloor` can now see it, so `updateRating` stops treating a coin
+ * landing the right way up as evidence and the rating stops reading high.
+ */
+function pickBetween(pair: Pair, winner: Side): AnswerSpec {
+  const options = [`${pair.n1}/${pair.d1}`, `${pair.n2}/${pair.d2}`]
+  const first = winner.n === pair.n1 && winner.d === pair.d1
+  return { kind: 'choice', options, correct: first ? 0 : 1 }
+}
+
 // ---------------------------------------------------------------------------
 // The formats
 
@@ -386,7 +412,7 @@ function whichIsGreater(pair: Pair): Draft {
   const [greater, smaller] = ranked(pair)
   return {
     prompt: `Which is greater: ${pair.n1}/${pair.d1} or ${pair.n2}/${pair.d2}?`,
-    answer: asText(greater),
+    answer: pickBetween(pair, greater),
     extra: {},
     workedSteps: comparisonSteps(pair, greater, 'the greater one'),
     misconceptions: [wantedTheGreater(greater, smaller, `So ${asText(greater)} is the greater one.`)],
@@ -398,7 +424,7 @@ function whichIsSmaller(pair: Pair): Draft {
   const [greater, smaller] = ranked(pair)
   return {
     prompt: `Which is smaller: ${pair.n1}/${pair.d1} or ${pair.n2}/${pair.d2}?`,
-    answer: asText(smaller),
+    answer: pickBetween(pair, smaller),
     extra: {},
     workedSteps: comparisonSteps(pair, smaller, 'the smaller one'),
     misconceptions: [wantedTheSmaller(greater, smaller)],
@@ -427,7 +453,7 @@ function closerToHalf(pair: Pair): Draft {
 
   return {
     prompt: `Which is closer to 1/2: ${n1}/${d1} or ${n2}/${d2}?`,
-    answer: asText(closer),
+    answer: pickBetween(pair, closer),
     extra: {},
     workedSteps: [
       `${n1}/${d1} is ${halfPhrase(n1, d1)} and ${n2}/${d2} is ${halfPhrase(n2, d2)}.`,
@@ -457,7 +483,7 @@ function closerToOne(pair: Pair): Draft {
 
   return {
     prompt: `Which is closer to 1 whole: ${n1}/${d1} or ${n2}/${d2}?`,
-    answer: asText(greater),
+    answer: pickBetween(pair, greater),
     extra: {},
     workedSteps: [
       `Both of these are less than one whole, so whichever is bigger is also the one that has ` +
@@ -496,7 +522,7 @@ function inContext(pair: Pair, format: number, rng: Rng): Draft {
       `${NAMES[nameA]} ${past} ${n1}/${d1} of a ${thing}. ${NAMES[nameB]} ${past} ` +
       `${n2}/${d2} of another ${thing} the same size. Which is the ` +
       `${wantsMore ? 'bigger' : 'smaller'} amount, ${n1}/${d1} or ${n2}/${d2}?`,
-    answer: asText(wanted),
+    answer: pickBetween(pair, wanted),
     extra: { nameA, nameB, context: contextIndex },
     workedSteps: comparisonSteps(
       pair,
@@ -557,7 +583,7 @@ function commonDenominator(pair: Pair): Draft {
     prompt:
       `To compare ${n1}/${d1} and ${n2}/${d2} you can give them the same bottom number. ` +
       `What is the smallest number that both ${d1} and ${d2} go into?`,
-    answer: String(common),
+    answer: { kind: 'rational', canonical: String(common) },
     extra: {},
     workedSteps: steps,
     misconceptions: keepUsable(

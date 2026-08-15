@@ -5,6 +5,7 @@ import { TRACK_NAMES } from '../audio/music'
 import { CELEBRATION_MS } from '../screens/Match'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft, Country } from '../store/storage'
+import { giveAnyAnswer } from '../test/answering'
 
 const COUNTRY: Country = {
   name: 'Rionia',
@@ -70,9 +71,7 @@ function kickOff(): void {
 }
 
 function answer(given: string): void {
-  const field = screen.getByRole('textbox')
-  fireEvent.change(field, { target: { value: given } })
-  fireEvent.keyDown(field, { key: 'Enter' })
+  giveAnyAnswer(given)
   act(() => {
     vi.advanceTimersByTime(CELEBRATION_MS)
   })

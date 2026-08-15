@@ -20,7 +20,7 @@ import {
 import type { TryoutState, TryoutTrack } from './tryout'
 import { makeRng } from './items/rng'
 import { ALL_GENERATORS, generatorFor } from './items/generators'
-import { checkAnswer, canonicalOf } from './answer'
+import { answerText, checkAnswer } from './answer'
 
 const SEED = 20260804
 
@@ -170,7 +170,7 @@ describe('tryout ladder', () => {
       const [lo, hi] = generatorFor(step.standardId)!.range
       expect(item.difficulty).toBeGreaterThanOrEqual(lo)
       expect(item.difficulty).toBeLessThanOrEqual(hi)
-      expect(checkAnswer(canonicalOf(item.answer), item.answer).correct).toBe(true)
+      expect(checkAnswer(answerText(item.answer), item.answer).correct).toBe(true)
 
       state = recordAnswer(state, true)
     }
