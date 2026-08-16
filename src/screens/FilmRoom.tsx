@@ -37,6 +37,7 @@ import { CARD_STATS } from '../store/derive'
 import type { Attempt } from '../store/types'
 import { useAttempts } from '../store/useGameState'
 import type { Item } from '../engine/items/types'
+import { ItemFigure } from '../components/ItemFigure'
 import { DOMAIN_TO_STAT, STANDARDS_BY_ID } from '../curriculum/standards.generated'
 import type { CardStat } from '../curriculum/standards.generated'
 
@@ -297,6 +298,8 @@ function MissCard({ miss }: { miss: Miss }) {
       ) : (
         <>
           <p className="mt-2 text-lg font-bold text-white/85">{item.prompt}</p>
+
+          <ItemFigure item={item} />
 
           {/*
             What he was choosing between.

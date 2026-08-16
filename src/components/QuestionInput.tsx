@@ -32,6 +32,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
 
@@ -104,9 +105,17 @@ export interface QuestionInputProps {
    * the last one's keystroke.
    */
   disabled?: boolean
+  /** A picture for this question, if it has one. Sits between the prompt and the input. */
+  figure?: ReactNode
 }
 
-export function QuestionInput({ prompt, promptWithSlot, onSubmit, disabled }: QuestionInputProps) {
+export function QuestionInput({
+  prompt,
+  promptWithSlot,
+  onSubmit,
+  disabled,
+  figure,
+}: QuestionInputProps) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   /**
@@ -197,6 +206,8 @@ export function QuestionInput({ prompt, promptWithSlot, onSubmit, disabled }: Qu
       >
         {prompt}
       </p>
+
+      {figure}
 
       {inline ? (
         <div

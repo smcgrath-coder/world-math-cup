@@ -25,6 +25,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
 
@@ -46,9 +47,11 @@ export interface ChoiceInputProps {
    * question with this one's keystroke.
    */
   disabled?: boolean
+  /** A picture for this question, if it has one. Sits between the prompt and the options. */
+  figure?: ReactNode
 }
 
-export function ChoiceInput({ prompt, options, onSubmit, disabled }: ChoiceInputProps) {
+export function ChoiceInput({ prompt, options, onSubmit, disabled, figure }: ChoiceInputProps) {
   const [chosen, setChosen] = useState<number | null>(null)
   const startedAt = useRef(now())
   const promptId = useId()
@@ -100,6 +103,8 @@ export function ChoiceInput({ prompt, options, onSubmit, disabled }: ChoiceInput
       <p id={promptId} className="w-full text-center text-2xl font-bold text-white text-balance">
         {prompt}
       </p>
+
+      {figure}
 
       <div
         ref={groupRef}

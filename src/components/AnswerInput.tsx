@@ -1,5 +1,6 @@
 import { ChoiceInput } from './ChoiceInput'
 import { QuestionInput } from './QuestionInput'
+import { ItemFigure } from './ItemFigure'
 import type { Item } from '../engine/items/types'
 
 /**
@@ -12,6 +13,11 @@ import type { Item } from '../engine/items/types'
  *
  * Both inputs report `(given, latencyMs)` and take `disabled`, so a caller only
  * has to know it is asking a question — not what shape the answer is.
+ *
+ * The figure is built once, here, and handed to whichever input renders —
+ * both put it in the same place, between the prompt and the input itself, so
+ * a child answering by numpad and one answering by choice see it land in the
+ * same spot either way.
  */
 export interface AnswerInputProps {
   item: Item
@@ -20,11 +26,14 @@ export interface AnswerInputProps {
 }
 
 export function AnswerInput({ item, onSubmit, disabled }: AnswerInputProps) {
+  const figure = <ItemFigure item={item} />
+
   if (item.answer.kind === 'choice') {
     return (
       <ChoiceInput
         prompt={item.prompt}
         options={item.answer.options}
+        figure={figure}
         onSubmit={onSubmit}
         disabled={disabled}
       />
@@ -35,6 +44,7 @@ export function AnswerInput({ item, onSubmit, disabled }: AnswerInputProps) {
     <QuestionInput
       prompt={item.prompt}
       promptWithSlot={item.promptWithSlot}
+      figure={figure}
       onSubmit={onSubmit}
       disabled={disabled}
     />
