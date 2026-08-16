@@ -155,6 +155,22 @@ export function attemptIdFor(seq: number): string {
   return `a${String(safeSeq(seq)).padStart(ID_DIGITS, '0')}`
 }
 
+/**
+ * Whether `id` was minted by *this* device's counter, as opposed to arriving
+ * from `mergeRemoteAttempts` (this device's own uploads bouncing back keep
+ * their bare id too, so this is really "id has the shape the counter
+ * produces" — see `sync/attemptMerge.ts`).
+ *
+ * The sync engine needs this to decide what to push: an attempt that already
+ * carries another device's namespace (`ipad-a000042`) must never be pushed
+ * back up under *this* device's id — that would relabel its origin and either
+ * manufacture a phantom third copy or, worse, collide with the real device
+ * that actually minted it.
+ */
+export function isLocallyMintedId(id: string): boolean {
+  return ID_PATTERN.test(id)
+}
+
 /** The counter value an id was minted from, or 0 if it was not one of ours. */
 function seqOf(id: string): number {
   return ID_PATTERN.test(id) ? Number(id.slice(1)) : 0
@@ -259,8 +275,15 @@ export function validateAttempt(value: unknown): Attempt | null {
   return attempt
 }
 
-/** The saved country, or `null` if it is unusable and the creator should re-run. */
-function validateCountry(value: unknown): Country | null {
+/**
+ * The saved country, or `null` if it is unusable and the creator should re-run.
+ *
+ * Exported for `sync/`: a country pulled from another device's household row
+ * is exactly as untrusted as one read off local disk, and must be dropped
+ * rather than applied if it does not validate — the same rule `validateAttempt`
+ * exists for, extended to the one other piece of state that leaves the device.
+ */
+export function validateCountry(value: unknown): Country | null {
   if (!isObject(value)) return null
   if (!isFilledString(value.name)) return null
   if (!isFiniteNumber(value.stars)) return null
@@ -290,8 +313,8 @@ function validateCountry(value: unknown): Country | null {
   }
 }
 
-/** Only real booleans override a default, so `"no"` cannot read as `true`. */
-function validateSettings(value: unknown): Settings {
+/** Only real booleans override a default, so `"no"` cannot read as `true`. Exported for `sync/`, same reasoning as `validateCountry`. */
+export function validateSettings(value: unknown): Settings {
   const out = { ...DEFAULT_SETTINGS }
   if (!isObject(value)) return out
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
@@ -459,6 +482,29 @@ export class GameStore {
 
   updateSettings(patch: Partial<Settings>): void {
     this.commit({ ...this.state, settings: { ...this.state.settings, ...patch } })
+  }
+
+  /**
+   * Fold in attempts pulled from another device during sync, with ids that are
+   * already final.
+   *
+   * Deliberately distinct from `appendAttempts`, which mints a fresh id from
+   * the local counter for every draft it is given. These ids are not drafts —
+   * `sync/attemptMerge.ts` has already decided what each one must be (this
+   * device's own bounced back under its existing bare id, another device's
+   * namespaced by its origin) — and re-minting them here would hand every
+   * synced attempt a *second*, different id on top of the one it already has,
+   * duplicating it in the log on every single sync.
+   *
+   * Takes the already-merged array rather than a delta so the caller (the sync
+   * engine) can do the dedup/validate pass with `foldRemoteAttempts`, which
+   * returns the *same reference* when nothing changed — so this is a cheap
+   * `===` no-op on every sync after the state has converged, exactly like
+   * `mergeRemoteAttempts` deciding not to touch anything else.
+   */
+  mergeRemoteAttempts(nextAttempts: readonly Attempt[]): void {
+    if (nextAttempts === this.state.attempts) return
+    this.commit({ ...this.state, attempts: nextAttempts as Attempt[] })
   }
 
   /** The only sanctioned way to lose the log. */

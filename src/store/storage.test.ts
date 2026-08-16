@@ -8,6 +8,7 @@ import {
   attemptIdFor,
   defaultState,
   getStore,
+  isLocallyMintedId,
   parseState,
   resetStoreForTest,
 } from './storage'
@@ -654,6 +655,83 @@ describe('parseState', () => {
     const result = parseState(JSON.stringify({ ...state, version: 9 }))
     expect(result.state.attempts).toHaveLength(1)
     expect(result.state.version).toBe(1)
+  })
+})
+
+describe('isLocallyMintedId', () => {
+  it('recognises exactly what attemptIdFor produces', () => {
+    expect(isLocallyMintedId(attemptIdFor(1))).toBe(true)
+    expect(isLocallyMintedId(attemptIdFor(999_999))).toBe(true)
+  })
+
+  it('rejects a namespaced id from sync — the whole reason this predicate exists', () => {
+    expect(isLocallyMintedId(`ipad-${attemptIdFor(1)}`)).toBe(false)
+  })
+
+  it('rejects garbage without throwing', () => {
+    expect(isLocallyMintedId('')).toBe(false)
+    expect(isLocallyMintedId('a')).toBe(false)
+    expect(isLocallyMintedId('not-an-id-at-all')).toBe(false)
+  })
+})
+
+describe('mergeRemoteAttempts', () => {
+  const synced = (id: string): Attempt => ({
+    id,
+    at: T0,
+    standardId: 'MT.4.NF.1',
+    difficulty: 50,
+    params: {},
+    given: '1/2',
+    correct: true,
+    latencyMs: 8000,
+    context: 'training',
+  })
+
+  it('replaces the log with the array it is given', () => {
+    const store = new GameStore()
+    store.appendAttempt(draft())
+    store.mergeRemoteAttempts([synced('ipad-a000001'), synced('ipad-a000002')])
+    expect(store.getState().attempts.map((a) => a.id)).toEqual(['ipad-a000001', 'ipad-a000002'])
+  })
+
+  it('notifies subscribers when the log actually changes', () => {
+    const store = new GameStore()
+    const seen = vi.fn()
+    store.subscribe(seen)
+    store.mergeRemoteAttempts([synced('ipad-a000001')])
+    expect(seen).toHaveBeenCalledTimes(1)
+  })
+
+  it('is a silent no-op when handed the exact array already held — the sync engine’s unchanged case', () => {
+    const store = new GameStore()
+    const seen = vi.fn()
+    store.subscribe(seen)
+    // `attemptMerge.foldRemoteAttempts` returns the *same reference* when a
+    // sync found nothing new; this proves the store honours that contract
+    // rather than re-committing (and re-rendering, and re-persisting) on
+    // every opportunistic sync tick even when nothing changed.
+    const current = store.getState().attempts
+    store.mergeRemoteAttempts(current)
+    expect(seen).not.toHaveBeenCalled()
+  })
+
+  it('persists across a reload, same as any other write', () => {
+    const store = new GameStore()
+    store.mergeRemoteAttempts([synced('ipad-a000001')])
+    const reloaded = new GameStore()
+    expect(reloaded.getState().attempts.map((a) => a.id)).toEqual(['ipad-a000001'])
+  })
+
+  it('does not disturb the local id counter — synced ids do not match the counter pattern', () => {
+    const store = new GameStore()
+    store.mergeRemoteAttempts([synced('ipad-a000001'), synced('a-not-a-real-counter-id')])
+    // The next locally-minted attempt must still start from 1: nothing about
+    // a synced id, however it is shaped, should be read as advancing the
+    // local counter — that is `seqOf`'s job to ignore, and this is the
+    // integration point where a regression there would actually bite.
+    const a = store.appendAttempt(draft())
+    expect(a!.id).toBe(attemptIdFor(1))
   })
 })
 
