@@ -12,6 +12,7 @@ import { PostMatch } from '../screens/PostMatch'
 import { useAttempts, useCountry, useSettings } from '../store/useGameState'
 import { useMusicTrack } from '../audio/useMusicTrack'
 import type { TrackName } from '../audio/music'
+import { useOpportunisticSync } from '../sync/useOpportunisticSync'
 import type { Opponent } from '../data/opponents'
 import type { Stakes } from '../engine/match'
 
@@ -24,6 +25,10 @@ import type { Stakes } from '../engine/match'
  */
 export function AppShell() {
   const [generation, setGeneration] = useState(0)
+  // Here, not inside `Session`: this must survive a save-replace remount
+  // rather than tearing down and resubscribing every time `key` changes, and
+  // it has nothing to do with which gate `Session` is currently showing.
+  useOpportunisticSync()
   return <Session key={generation} onSaveReplaced={() => setGeneration((g) => g + 1)} />
 }
 

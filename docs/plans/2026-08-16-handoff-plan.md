@@ -60,6 +60,28 @@ Estimate: 15 minutes.
 
 ## WP1 — profiles and device sync (P0, Scott's explicit ask)
 
+> **Status, 16 Aug 2026.** Built and gate-green (tsc 0, lint 0, 1234 tests).
+> `README.md`'s new "Device sync" section is the map of what exists; read that
+> first. Task 0 (the GitHub remote) is also done — `phase1` is pushed and
+> tracked at `github.com/smcgrath-coder/world-math-cup`.
+>
+> **What Scott still has to do, and only Scott can:** run `supabase/schema.sql`
+> once in the SQL editor, and put the project's URL and anon key into
+> `.env.local` (copy `.env.example`). Until then the whole feature stays
+> invisible by design — no Family row, no behaviour change at all. After that,
+> the one thing worth doing by hand that no test can stand in for: actually
+> play on two devices and watch them converge.
+>
+> One thing the build turned up that this plan's own sync design did not
+> anticipate, on top of the sequential-id landmine it did call out: a naive
+> "always push now()" last-write-wins would let a freshly linked,
+> never-touched device overwrite a real save with its own blank defaults just
+> by syncing first, because being the newest thing to run would always win.
+> The fix — a device only pushes when live state genuinely differs from what
+> it last knew, never on its first sync with nothing local to offer — is in
+> `syncEngine.ts` and mutation-tested in `syncEngine.test.ts` under the name
+> "THE SAFETY PROPERTY".
+
 **Goal:** Rion starts on the laptop, picks up the iPad, and his country, card,
 and history are just *there*. A small menu covers "who is playing" and "link
 this device". This also closes the review's Tier 1 #3 (save durability —

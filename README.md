@@ -20,7 +20,7 @@ npm run dev
 ```bash
 npx tsc -b --force   # must exit 0
 npm run lint         # must exit 0
-npm test             # 1172 tests
+npm test             # 1234 tests
 ```
 
 **`npm test` on its own is not enough.** vitest strips types without checking
@@ -203,6 +203,48 @@ To check the config without publishing:
 ```bash
 npx wrangler deploy --dry-run
 ```
+
+## Device sync
+
+Optional, and off by default. With nothing configured the app behaves exactly
+as it always has — one save, one device, `localStorage`. Set it up and a save
+picks up on a second device too: laptop to iPad, mid-season, without losing
+anything on either.
+
+```bash
+cp .env.example .env.local   # fill in the two VITE_SUPABASE_* values
+```
+
+then, once, in the Supabase SQL editor: run `supabase/schema.sql`. It is safe
+to re-run — every statement is `if not exists` / `or replace`. Read the
+comment at the top before running it; the security model (default-deny RLS,
+every table reachable only through a handful of `security definer` functions)
+is explained there rather than here, because it is the part someone extending
+this later actually needs to understand.
+
+A "Family" row appears in Settings' grown-up section once those two env vars
+are set — absent entirely otherwise, never shown-and-broken. It links this
+device to a household by a 6-character code (same shape as `finns-chores`'
+own family code), then to a player within it. Linking never wipes or replaces
+anything already here: a device with real local play joining a brand-new
+household uploads that play on its first sync, and a brand-new device joining
+an existing household adopts the real save instead.
+
+**The landmine, if you touch any of this:** attempt ids are a local
+sequential counter, so two devices mint the same id for different attempts
+constantly. `src/sync/attemptMerge.ts` is the fix — an attempt's true
+identity for merging is `(deviceId, localId)`, never `localId` alone — and it
+is mutation-tested specifically because a bug here would silently discard a
+child's history rather than error. A second one turned up building this: a
+naive "always push now()" last-write-wins would let a freshly linked,
+never-touched device overwrite a real save with its own blank defaults just
+by syncing first. `syncEngine.ts`'s `getLastKnownProfile` guard is what stops
+that, also mutation-tested. Read the comments on both before changing either.
+
+Everything above `supabaseTransport.ts` is written against a `SyncTransport`
+interface and tested with an in-memory fake (`src/test/fakeTransport.ts`) —
+`syncEngine.test.ts` simulates two real devices syncing through one shared
+"cloud" with no network, no project, and no credentials at all.
 
 ## Still open
 

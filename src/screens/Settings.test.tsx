@@ -238,3 +238,44 @@ describe('the voice', () => {
     )
   })
 })
+
+describe('the Family row', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('is absent from the grown-up section when Supabase is not configured', () => {
+    // The default, unconfigured state — no `.env.local` in this test
+    // environment, matching a real deployment nobody has run
+    // `supabase/schema.sql` and set the env vars for yet. A control that
+    // promises "link your devices" and does nothing is worse than none.
+    open()
+    parentView()
+    expect(screen.queryByText(/family/i)).not.toBeInTheDocument()
+  })
+
+  it('appears once Supabase is configured', () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key')
+
+    open()
+    parentView()
+    expect(screen.getByText('Family')).toBeInTheDocument()
+    expect(screen.getByText(/link this device/i)).toBeInTheDocument()
+  })
+
+  it('opens FamilySync inline rather than navigating away from Settings', () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key')
+
+    open()
+    parentView()
+    fireEvent.click(screen.getByText(/link this device/i))
+
+    // FamilySync's own unlinked-state copy, proving it actually mounted here
+    // rather than the row just toggling its own label.
+    expect(screen.getByText(/join with a code/i)).toBeInTheDocument()
+    // And the rest of the grown-up section is still on screen beside it.
+    expect(screen.getByText(/where the save lives/i)).toBeInTheDocument()
+  })
+})

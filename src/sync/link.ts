@@ -126,7 +126,21 @@ export function setLastKnownProfile(profile: KnownProfile): void {
   writeJson(LAST_KNOWN_PROFILE_KEY, profile)
 }
 
-export function resetLinkForTest(): void {
+/**
+ * Forget which household and player this device talks to, and everything
+ * sync knew as a result — but never the local save itself. Country,
+ * settings and every attempt stay exactly as they are; only "who am I
+ * syncing with" resets.
+ *
+ * The known-profile snapshot has to go too, not just the link: if it did
+ * not, relinking to a *different* household later would compare live local
+ * state against a stale snapshot from the household just left, which could
+ * read as "nothing changed" and skip a push that should have happened. A
+ * clean slate here means the very next sync after any (re)link falls back to
+ * `getDefaultProfile()` for that comparison, which is what correctly makes a
+ * device with real local play upload it on first joining any household.
+ */
+export function unlinkDevice(): void {
   try {
     localStorage.removeItem(LINK_KEY)
     localStorage.removeItem(LAST_SYNCED_KEY)
@@ -135,3 +149,5 @@ export function resetLinkForTest(): void {
     // Nothing to clean up if storage is unavailable.
   }
 }
+
+export const resetLinkForTest = unlinkDevice

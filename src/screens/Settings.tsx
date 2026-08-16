@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { CoachExplainer } from './CoachExplainer'
+import { FamilySync } from './FamilySync'
 import { useAttempts, useSettings } from '../store/useGameState'
 import { getStore, STORAGE_KEY } from '../store/storage'
 import { deriveRatings } from '../store/derive'
+import { isSyncConfigured } from '../sync/config'
 import { ALL_GENERATORS, generatorFor } from '../engine/items/generators'
 
 /**
@@ -30,6 +32,7 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
 
   const [readingCoach, setReadingCoach] = useState(false)
   const [grownUp, setGrownUp] = useState(false)
+  const [showingFamily, setShowingFamily] = useState(false)
   const [exported, setExported] = useState<string | null>(null)
   const [importText, setImportText] = useState('')
   const [importNote, setImportNote] = useState<string | null>(null)
@@ -75,6 +78,24 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
 
         {grownUp && (
           <section className="flex flex-col gap-6">
+            {/*
+              Absent entirely, not shown-and-disabled, when Supabase is not
+              configured — see `getSyncEnv`. A control that promises "link
+              your devices" and does nothing is worse than no control.
+            */}
+            {isSyncConfigured() && (
+              <div>
+                <Heading>Family</Heading>
+                {!showingFamily ? (
+                  <Row onClick={() => setShowingFamily(true)}>Link this device / move to another one</Row>
+                ) : (
+                  <div className="rounded-xl bg-black/20 p-4 ring-1 ring-white/10">
+                    <FamilySync />
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <Heading>Where the save lives</Heading>
               <p data-testid="storage-note" className="text-[15px] leading-relaxed text-white/70">
