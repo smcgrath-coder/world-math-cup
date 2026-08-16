@@ -312,3 +312,120 @@ describe('the fixture list', () => {
     expect(text).not.toMatch(/streak|days? in a row|you haven’t|you haven't|come back|missed a day/i)
   })
 })
+
+// ---------------------------------------------------------------------------
+
+describe('the road to the cup', () => {
+  const open = () => {
+    const onKickoff = vi.fn()
+    const onTrain = vi.fn()
+    render(<Play onKickoff={onKickoff} onTrain={onTrain} />)
+    return { onKickoff, onTrain }
+  }
+
+  it('offers to qualify when there is no active run', () => {
+    open()
+    const card = screen.getByTestId('campaign-card')
+    expect(within(card).getByText(/qualify for a cup/i)).toBeInTheDocument()
+  })
+
+  it('starts a qualifying series on tap, and shows the first fixture ready to go', () => {
+    open()
+    fireEvent.click(screen.getByText(/qualify for a cup/i))
+
+    expect(getStore().getState().campaign?.stage).toBe('qualifying')
+    const card = screen.getByTestId('campaign-card')
+    expect(within(card).getByText(/next up/i)).toBeInTheDocument()
+    expect(within(card).getByTestId('campaign-fixture')).toBeInTheDocument()
+  })
+
+  it('kicks off the campaign fixture with the campaign flag set, and friendly stakes for qualifying', () => {
+    const { onKickoff } = open()
+    fireEvent.click(screen.getByText(/qualify for a cup/i))
+    fireEvent.click(screen.getByTestId('campaign-fixture'))
+
+    expect(onKickoff).toHaveBeenCalledTimes(1)
+    const [opponent, stakes, campaignFixture] = onKickoff.mock.calls[0]!
+    expect(opponent.id).toBeTruthy()
+    expect(stakes).toBe('friendly')
+    expect(campaignFixture).toBe(true)
+  })
+
+  it('never sends a campaign kickoff for an ordinary exhibition pick', () => {
+    const { onKickoff } = open()
+    const fixture = screen.getAllByTestId('fixture')[0]!
+    fireEvent.click(fixture)
+    fireEvent.click(screen.getByRole('button', { name: /kick off/i }))
+
+    expect(onKickoff).toHaveBeenCalledTimes(1)
+    expect(onKickoff.mock.calls[0]![2]).toBeUndefined()
+  })
+
+  it('shows the qualifying tally once a match has been played', () => {
+    getStore().setCampaign({
+      stage: 'qualifying',
+      seed: 1,
+      opponentIds: ['spain', 'brazil', 'japan'],
+      results: ['win'],
+    })
+    open()
+    const card = screen.getByTestId('campaign-card')
+    expect(within(card).getByText(/1 win, 0 losses, 2 to play/i)).toBeInTheDocument()
+  })
+
+  it('shows the group table by name, with the player as "You"', () => {
+    getStore().setCampaign({
+      stage: 'group',
+      seed: 1,
+      groups: [
+        ['me', 'spain', 'japan', 'haiti'],
+        ...Array.from({ length: 7 }, (_, i) => [`t${i}`, `u${i}`, `v${i}`, `w${i}`]),
+      ] as never,
+      matches: [{ homeId: 'me', awayId: 'spain', home: 1, away: 1 }],
+    })
+    open()
+    const table = screen.getByTestId('group-table')
+    expect(within(table).getByText('You')).toBeInTheDocument()
+    expect(within(table).getByText('Spain')).toBeInTheDocument()
+  })
+
+  it('names the knockout round it is currently in', () => {
+    getStore().setCampaign({
+      stage: 'knockout',
+      seed: 1,
+      groups: [
+        ['me', 'a', 'b', 'c'],
+        ...Array.from({ length: 7 }, (_, i) => [`t${i}`, `u${i}`, `v${i}`, `w${i}`]),
+      ] as never,
+      groupMatches: [],
+      ties: [{ round: 'qf', homeId: 'me', awayId: 'brazil' }],
+    })
+    open()
+    expect(screen.getByText(/quarter-final/i)).toBeInTheDocument()
+  })
+
+  it('falls back to "start a fresh run" rather than crashing on a campaign with no resolvable fixture', () => {
+    // A structurally-valid-enough campaign whose engine invariants are
+    // broken -- every group tie already decided, nothing pending for the
+    // player. nextFixture returns null for this; the card must fall back
+    // rather than render a broken row or throw.
+    getStore().setCampaign({
+      stage: 'knockout',
+      seed: 1,
+      groups: [
+        ['me', 'a', 'b', 'c'],
+        ...Array.from({ length: 7 }, (_, i) => [`t${i}`, `u${i}`, `v${i}`, `w${i}`]),
+      ] as never,
+      groupMatches: [],
+      ties: [],
+    })
+    expect(() => open()).not.toThrow()
+    expect(screen.getByText(/qualify for a cup/i)).toBeInTheDocument()
+  })
+
+  it('leaves the exhibition list labelled as practice, unchanged', () => {
+    open()
+    expect(screen.getByText(/practice matches/i)).toBeInTheDocument()
+    expect(screen.getByText(/who do you fancy/i)).toBeInTheDocument()
+  })
+})

@@ -67,6 +67,7 @@ describe('defaults', () => {
       country: null,
       attempts: [],
       settings: DEFAULT_SETTINGS,
+      campaign: null,
     })
   })
 
@@ -84,6 +85,7 @@ describe('defaults', () => {
       corrupt: false,
       droppedAttempts: 0,
       droppedCountry: false,
+      droppedCampaign: false,
     })
   })
 
@@ -645,7 +647,11 @@ describe('parseState', () => {
   })
 
   it('treats a null blob as an empty store rather than a corrupt one', () => {
-    expect(parseState(null)).toEqual({ state: defaultState(), seq: 1, report: { corrupt: false, droppedAttempts: 0, droppedCountry: false } })
+    expect(parseState(null)).toEqual({
+      state: defaultState(),
+      seq: 1,
+      report: { corrupt: false, droppedAttempts: 0, droppedCountry: false, droppedCampaign: false },
+    })
   })
 
   it('ignores an unknown schema version rather than refusing the save', () => {
@@ -672,6 +678,151 @@ describe('isLocallyMintedId', () => {
     expect(isLocallyMintedId('')).toBe(false)
     expect(isLocallyMintedId('a')).toBe(false)
     expect(isLocallyMintedId('not-an-id-at-all')).toBe(false)
+  })
+})
+
+describe('campaign', () => {
+  const qualifying = {
+    stage: 'qualifying' as const,
+    seed: 1,
+    opponentIds: ['spain', 'brazil', 'japan'] as [string, string, string],
+    results: ['win' as const],
+  }
+
+  it('defaults to null', () => {
+    const store = new GameStore()
+    expect(store.getState().campaign).toBeNull()
+  })
+
+  it('setCampaign writes through and reads back after a reload', () => {
+    const store = new GameStore()
+    store.setCampaign(qualifying)
+    expect(store.getState().campaign).toEqual(qualifying)
+
+    const reloaded = new GameStore()
+    expect(reloaded.getState().campaign).toEqual(qualifying)
+  })
+
+  it('setCampaign(null) clears it, whether a run just finished or was abandoned', () => {
+    const store = new GameStore()
+    store.setCampaign(qualifying)
+    store.setCampaign(null)
+    expect(store.getState().campaign).toBeNull()
+  })
+
+  it('notifies subscribers on every change, including clearing', () => {
+    const store = new GameStore()
+    const seen = vi.fn()
+    store.subscribe(seen)
+    store.setCampaign(qualifying)
+    store.setCampaign(null)
+    expect(seen).toHaveBeenCalledTimes(2)
+  })
+
+  it('a corrupt campaign is dropped without touching attempts or country', () => {
+    seed({
+      version: 1,
+      attempts: [stored(1)],
+      country: COUNTRY,
+      settings: DEFAULT_SETTINGS,
+      campaign: { stage: 'qualifying', seed: 1, opponentIds: ['spain'], results: [] }, // wrong length
+      seq: 2,
+    })
+    const store = new GameStore()
+    expect(store.getState().campaign).toBeNull()
+    expect(store.getState().attempts).toHaveLength(1)
+    expect(store.getState().country).toEqual(COUNTRY)
+    expect(store.getLoadReport().droppedCampaign).toBe(true)
+  })
+
+  it('a garbage-shaped campaign value is dropped rather than crashing the load', () => {
+    seed({ version: 1, attempts: [], country: null, settings: DEFAULT_SETTINGS, campaign: 'not an object', seq: 1 })
+    expect(() => new GameStore()).not.toThrow()
+    expect(new GameStore().getState().campaign).toBeNull()
+  })
+
+  it('accepts a well-formed group-stage campaign round trip', () => {
+    const group = {
+      stage: 'group' as const,
+      seed: 1,
+      groups: [
+        ['me', 'spain', 'japan', 'haiti'],
+        ['brazil', 'italy', 'poland', 'chile'],
+        ['argentina', 'a', 'b', 'c'],
+        ['france', 'd', 'e', 'f'],
+        ['england', 'g', 'h', 'i'],
+        ['morocco', 'j', 'k', 'l'],
+        ['portugal', 'm', 'n', 'o'],
+        ['belgium', 'p', 'q', 'r'],
+      ] as [string, string, string, string][],
+      matches: [{ homeId: 'spain', awayId: 'japan', home: 2, away: 0 }],
+    }
+    const store = new GameStore()
+    store.setCampaign(group)
+    expect(store.getState().campaign).toEqual(group)
+  })
+
+  it('rejects a group draw where the player appears twice, or not at all', () => {
+    const base = {
+      stage: 'group' as const,
+      seed: 1,
+      matches: [],
+    }
+    const twice = {
+      ...base,
+      groups: [
+        ['me', 'a', 'b', 'c'],
+        ['me', 'd', 'e', 'f'],
+        ...Array.from({ length: 6 }, (_, i) => [`g${i}`, `h${i}`, `i${i}`, `j${i}`]),
+      ],
+    }
+    const never = {
+      ...base,
+      groups: Array.from({ length: 8 }, (_, i) => [`g${i}`, `h${i}`, `i${i}`, `j${i}`]),
+    }
+    seed({ version: 1, attempts: [], country: null, settings: DEFAULT_SETTINGS, campaign: twice, seq: 1 })
+    expect(new GameStore().getState().campaign).toBeNull()
+
+    localStorage.clear()
+    seed({ version: 1, attempts: [], country: null, settings: DEFAULT_SETTINGS, campaign: never, seq: 1 })
+    expect(new GameStore().getState().campaign).toBeNull()
+  })
+
+  it('accepts a well-formed knockout campaign, including a decided tie', () => {
+    const knockout = {
+      stage: 'knockout' as const,
+      seed: 1,
+      groups: Array.from({ length: 8 }, (_, i) =>
+        i === 0 ? ['me', 'a', 'b', 'c'] : [`t${i}0`, `t${i}1`, `t${i}2`, `t${i}3`],
+      ) as [string, string, string, string][],
+      groupMatches: [],
+      ties: [
+        { round: 'r16' as const, homeId: 'me', awayId: 'spain' },
+        {
+          round: 'r16' as const,
+          homeId: 'brazil',
+          awayId: 'japan',
+          result: { homeId: 'brazil', awayId: 'japan', home: 2, away: 1, winnerId: 'brazil', wentToPenalties: false },
+        },
+      ],
+    }
+    const store = new GameStore()
+    store.setCampaign(knockout)
+    expect(store.getState().campaign).toEqual(knockout)
+  })
+
+  it('rejects a knockout tie naming a round the engine does not recognise', () => {
+    const knockout = {
+      stage: 'knockout' as const,
+      seed: 1,
+      groups: Array.from({ length: 8 }, (_, i) =>
+        i === 0 ? ['me', 'a', 'b', 'c'] : [`t${i}0`, `t${i}1`, `t${i}2`, `t${i}3`],
+      ),
+      groupMatches: [],
+      ties: [{ round: 'group-of-death', homeId: 'me', awayId: 'spain' }],
+    }
+    seed({ version: 1, attempts: [], country: null, settings: DEFAULT_SETTINGS, campaign: knockout, seq: 1 })
+    expect(new GameStore().getState().campaign).toBeNull()
   })
 })
 

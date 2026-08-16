@@ -9,12 +9,16 @@ import { SettingsScreen } from '../screens/Settings'
 import { Match } from '../screens/Match'
 import type { MatchResult } from '../screens/Match'
 import { PostMatch } from '../screens/PostMatch'
-import { useAttempts, useCountry, useSettings } from '../store/useGameState'
+import { useAttempts, useCampaign, useCountry, useSettings } from '../store/useGameState'
+import { getStore } from '../store/storage'
 import { useMusicTrack } from '../audio/useMusicTrack'
 import type { TrackName } from '../audio/music'
 import { useOpportunisticSync } from '../sync/useOpportunisticSync'
 import type { Opponent } from '../data/opponents'
 import type { Stakes } from '../engine/match'
+import { applyCampaignResult } from '../engine/campaign'
+import type { CampaignOutcome } from '../engine/campaign'
+import { outcomeFor } from '../screens/campaignCopy'
 
 /**
  * The whole app.
@@ -74,10 +78,50 @@ export function trackFor(state: {
   return 'main_theme'
 }
 
+/**
+ * What happens to the campaign when a match ends, folded into the same
+ * `MatchResult` `PostMatch` already reads — exported and pure so this is
+ * tested directly rather than only through a rendered `Match`.
+ *
+ * A no-op — the campaign untouched, no outcome attached — for every ordinary
+ * exhibition match, which is most of them. `isCampaign` is the only thing
+ * that turns this on; the opponent and stakes are not enough, since
+ * qualifying shares its `'friendly'` stakes with an ordinary exhibition
+ * friendly and could otherwise be mistaken for one.
+ *
+ * Applying the reducer can throw on a campaign whose internal invariants are
+ * broken — the same defensive throws `campaign.ts` uses everywhere else.
+ * Caught here rather than left to crash the screen the instant a match ends:
+ * a campaign that cannot safely advance costs the run, exactly as a corrupt
+ * one loaded from disk does, and never the log underneath it.
+ */
+export function advanceCampaign(
+  played: MatchResult,
+  isCampaign: boolean,
+  campaign: ReturnType<typeof useCampaign>,
+  country: ReturnType<typeof useCountry>,
+): MatchResult & { campaignOutcome?: CampaignOutcome } {
+  if (!isCampaign || campaign === null) return played
+
+  try {
+    const outcome = outcomeFor(played.score[0], played.score[1])
+    const { next, outcome: campaignOutcome } = applyCampaignResult(campaign, outcome, played.score)
+    getStore().setCampaign(next)
+    if (campaignOutcome.kind === 'champion' && country !== null) {
+      getStore().setCountry({ ...country, stars: country.stars + 1 })
+    }
+    return { ...played, campaignOutcome }
+  } catch {
+    getStore().setCampaign(null)
+    return played
+  }
+}
+
 function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
   const country = useCountry()
   const settings = useSettings()
   const attempts = useAttempts()
+  const campaign = useCampaign()
 
   /**
    * The gates, read from the save once and then owned here.
@@ -99,8 +143,12 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
     opponent: Opponent
     stakes: Stakes
     at: number
+    /** Set only by the road-to-the-cup card — see `PlayProps.onKickoff`. */
+    isCampaign: boolean
   } | null>(null)
-  const [result, setResult] = useState<MatchResult | null>(null)
+  const [result, setResult] = useState<(MatchResult & { campaignOutcome?: CampaignOutcome }) | null>(
+    null,
+  )
 
   useMusicTrack(trackFor({ country: country !== null, explained, scouted, result, fixture, tab }))
 
@@ -115,6 +163,7 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
         opponent={result.opponent}
         score={result.score}
         questions={result.questions}
+        campaignOutcome={result.campaignOutcome}
         onDone={() => setResult(null)}
       />
     )
@@ -131,7 +180,7 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
         opponent={fixture.opponent}
         stakes={fixture.stakes}
         onDone={(played) => {
-          setResult(played)
+          setResult(advanceCampaign(played, fixture.isCampaign, campaign, country))
           setFixture(null)
         }}
       />
@@ -149,7 +198,9 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
       <main className="min-h-0 flex-1 pb-20">
         {tab === 'play' && (
           <Play
-            onKickoff={(opponent, stakes) => setFixture({ opponent, stakes, at: Date.now() })}
+            onKickoff={(opponent, stakes, campaignFixture) =>
+              setFixture({ opponent, stakes, at: Date.now(), isCampaign: campaignFixture === true })
+            }
             onTrain={() => setTab('training')}
           />
         )}

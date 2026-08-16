@@ -55,6 +55,8 @@ import { useAttempts, useCountry } from '../store/useGameState'
 import type { Item } from '../engine/items/types'
 import type { Opponent } from '../data/opponents'
 import type { CardStat } from '../curriculum/standards.generated'
+import type { CampaignOutcome } from '../engine/campaign'
+import { campaignCardCopy } from './campaignCopy'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -299,10 +301,16 @@ export interface PostMatchProps {
    * without this it says so rather than inventing one.
    */
   questions?: ReadonlyMap<string, Item>
+  /**
+   * What just happened to the World Cup run, if this match was part of one.
+   * `undefined` for every ordinary exhibition match — most of them — in
+   * which case nothing below changes at all.
+   */
+  campaignOutcome?: CampaignOutcome
   onDone?: () => void
 }
 
-export function PostMatch({ matchId, opponent, score, questions, onDone }: PostMatchProps) {
+export function PostMatch({ matchId, opponent, score, questions, campaignOutcome, onDone }: PostMatchProps) {
   const attempts = useAttempts()
   const country = useCountry()
   /** Frozen on mount, so "three weeks ago" cannot tick over while he reads it. */
@@ -358,6 +366,16 @@ export function PostMatch({ matchId, opponent, score, questions, onDone }: PostM
         {summary.crossings.map((crossing) => (
           <CrossedCard key={crossing.standardId} crossing={crossing} now={now} />
         ))}
+
+        {/*
+          Appended after everything above rather than woven into it, and
+          deliberately never touching `climbed`/`won`/`verdictFor` — the rule
+          that a loss leads with the rating rise applies to every match
+          equally, campaign or not, and this card exists precisely so that
+          rule never has to know campaigns exist. What just happened to the
+          run is news on top of the match, not a replacement for any of it.
+        */}
+        {campaignOutcome !== undefined && <CampaignNewsCard outcome={campaignOutcome} />}
 
         <div className="flex flex-col gap-3">
           <p className="text-[13px] leading-snug text-white/55">
@@ -550,6 +568,30 @@ function CourageCard({ courage }: { courage: Courage }) {
           loose.
         </p>
       )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * News about the World Cup run, on top of the match itself.
+ *
+ * Same visual weight as `CourageCard` on purpose — this is not a verdict on
+ * the match, it is a second, separate thing that happened alongside it, and
+ * it reads that way whether the run just ended or just moved on. All the
+ * wording lives in `campaignCopy.ts`, tested there for the one rule that
+ * matters most here: elimination reads as the run ending, never as him
+ * losing something, and the word "wrong" appears nowhere in it.
+ */
+function CampaignNewsCard({ outcome }: { outcome: CampaignOutcome }) {
+  const { heading, body } = campaignCardCopy(outcome)
+
+  return (
+    <section data-testid="campaign-news" className="rounded-2xl bg-gold/12 p-4 ring-1 ring-gold/30">
+      <p className="text-[11px] font-bold tracking-[0.15em] text-gold/80 uppercase">World Cup</p>
+      <p className="mt-1.5 text-base font-black text-gold">{heading}</p>
+      <p className="mt-1 text-[15px] leading-relaxed text-white/85">{body}</p>
     </section>
   )
 }

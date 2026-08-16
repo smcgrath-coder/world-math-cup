@@ -275,6 +275,75 @@ describe('PostMatch', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('campaign news', () => {
+  it('says nothing about the World Cup for an ordinary exhibition match', () => {
+    lossThatLifted()
+    renderLoss()
+    expect(screen.queryByTestId('campaign-news')).toBeNull()
+  })
+
+  it('reports what happened to the run, in addition to the match itself', () => {
+    clock = NOW - 60 * MINUTE
+    save([draft({ matchId: 'm1' }), draft({ matchId: 'm1', correct: false, given: '-1' })])
+
+    render(
+      <PostMatch
+        matchId="m1"
+        opponent={CURACAO}
+        score={[1, 0]}
+        campaignOutcome={{ kind: 'qualified' }}
+      />,
+    )
+
+    const news = screen.getByTestId('campaign-news')
+    expect(news).toHaveTextContent('Qualified!')
+    expect(news).toHaveTextContent(/group stage draw is in/i)
+  })
+
+  it('still leads with the rating rise on an eliminated campaign loss, exactly as any other losing rise does', () => {
+    lossThatLifted()
+
+    render(
+      <PostMatch
+        matchId="m1"
+        opponent={BRAZIL}
+        score={[1, 3]}
+        campaignOutcome={{ kind: 'eliminated-in-knockout', round: 'sf' }}
+      />,
+    )
+
+    // Same headline, same "your rating went up" framing as an ordinary loss —
+    // the campaign wiring must never touch this ordering.
+    const headline = screen.getByTestId('headline')
+    expect(headline).toHaveTextContent(/your rating went up/i)
+    expect(screen.queryByTestId('verdict')).toBeNull()
+
+    // The campaign card is news on top, never a replacement for any of that.
+    const news = screen.getByTestId('campaign-news')
+    expect(news).toHaveTextContent('The run ends here')
+    expect(news).toHaveTextContent(/Semi-Final/i)
+
+    // And it comes after everything else, never ahead of the rise.
+    const text = said()
+    expect(text.indexOf('Your rating went up')).toBeLessThan(text.indexOf('World Cup'))
+  })
+
+  it('never lets the campaign outcome bring back the word the rest of the screen refuses to say', () => {
+    render(
+      <PostMatch
+        matchId="m1"
+        opponent={CURACAO}
+        score={[0, 2]}
+        campaignOutcome={{ kind: 'eliminated-in-group' }}
+      />,
+    )
+    expect(said()).not.toMatch(/\bwrong\b/i)
+    expect(said()).not.toMatch(/\byou lost\b|\byou failed\b|\byou're out\b/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+
 describe('crossings', () => {
   const at = (over: Partial<Attempt>): Attempt => ({
     id: 'a000000000001',

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { PlayerCard } from '../components/PlayerCard'
 import { STAT_LABELS, clampStat, opponentCard } from '../components/stats'
-import { OPPONENTS } from '../data/opponents'
+import { OPPONENTS, OPPONENTS_BY_ID } from '../data/opponents'
 import type { Opponent, Tier } from '../data/opponents'
 import {
   CARD_STATS,
@@ -12,9 +12,13 @@ import {
 } from '../store/derive'
 import type { Attempt, Card } from '../store/types'
 import type { CardStat } from '../curriculum/standards.generated'
-import { useAttempts, useCountry } from '../store/useGameState'
+import { useAttempts, useCampaign, useCountry } from '../store/useGameState'
+import { getStore } from '../store/storage'
 import { makeRng } from '../engine/items/rng'
 import type { Stakes } from '../engine/match'
+import { drawQualifying, nextFixture } from '../engine/campaign'
+import type { Campaign } from '../engine/campaign'
+import { myGroupStandings, opponentName, qualifyingLine, stageLabel } from './campaignCopy'
 
 /** Sides offered on the front page. Enough for a real choice, few enough to read. */
 export const FIXTURE_COUNT = 5
@@ -114,13 +118,22 @@ export function suggestFixtures(overall: number, seed: number): Opponent[] {
 // ---------------------------------------------------------------------------
 
 export interface PlayProps {
-  onKickoff: (opponent: Opponent, stakes: Stakes) => void
+  /**
+   * `campaignFixture` is `true` only for the road-to-the-cup card's own kick
+   * off — never set by `TeamSheet`'s ordinary scouting flow. `AppShell` needs
+   * this to know whether to advance campaign state when the match ends, and
+   * inferring it from the opponent/stakes alone would be genuinely ambiguous:
+   * qualifying is played at `'friendly'` stakes, the same stakes an ordinary
+   * exhibition friendly uses, so the same opponent could mean either.
+   */
+  onKickoff: (opponent: Opponent, stakes: Stakes, campaignFixture?: boolean) => void
   onTrain: () => void
 }
 
 export function Play({ onKickoff, onTrain }: PlayProps) {
   const country = useCountry()
   const attempts = useAttempts()
+  const campaign = useCampaign()
   const [scouting, setScouting] = useState<Opponent | null>(null)
   const [browsing, setBrowsing] = useState(false)
   const [byTier, setByTier] = useState(false)
@@ -165,10 +178,18 @@ export function Play({ onKickoff, onTrain }: PlayProps) {
           </p>
         </section>
 
+        <CampaignCard
+          campaign={campaign}
+          overall={overall}
+          onStart={() => getStore().setCampaign(drawQualifying(overall, Date.now()))}
+          onKickoff={onKickoff}
+        />
+
         <section>
           <h2 className="mb-3 text-xs font-bold tracking-[0.2em] text-gold uppercase">
             Who do you fancy?
           </h2>
+          <p className="mb-3 -mt-2 text-xs text-white/45">Practice matches — nothing riding on these.</p>
           <ul className="flex flex-col gap-2">
             {fixtures.map((opponent) => (
               <li key={opponent.id}>
@@ -222,6 +243,109 @@ export function Play({ onKickoff, onTrain }: PlayProps) {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * "The road to the cup" — the one piece of Play that is not a free choice.
+ * Every other fixture on this screen is picked; a campaign fixture is
+ * whichever one the qualifying series, the group or the bracket says is
+ * next, so this goes straight to kickoff on a tap rather than opening
+ * `TeamSheet`'s scouting view, which exists for *choosing* a match. There is
+ * nothing to choose here — the stakes are fixed by the stage, not offered.
+ *
+ * `nextFixture`/`myGroupStandings` reading a corrupt-but-structurally-valid
+ * campaign could in principle throw on a broken internal invariant (see
+ * `campaign.ts`'s own defensive throws) — caught here rather than at the
+ * store layer, and treated the same way a failed `validateCampaign` already
+ * is: the card falls back to "start a fresh run" rather than taking the
+ * screen down with it.
+ */
+function CampaignCard({
+  campaign,
+  overall,
+  onStart,
+  onKickoff,
+}: {
+  campaign: Campaign | null
+  overall: number
+  onStart: () => void
+  onKickoff: (opponent: Opponent, stakes: Stakes, campaignFixture?: boolean) => void
+}) {
+  const safe = useMemo(() => {
+    if (campaign === null) return null
+    try {
+      const fixture = nextFixture(campaign)
+      if (fixture === null) return null
+      const opponent = OPPONENTS_BY_ID[fixture.opponentId]
+      if (!opponent) return null
+      return { campaign, fixture, opponent }
+    } catch {
+      return null
+    }
+  }, [campaign])
+
+  if (safe === null) {
+    return (
+      <section data-testid="campaign-card" className="rounded-2xl bg-gold/10 p-4 ring-1 ring-gold/30">
+        <h2 className="text-xs font-bold tracking-[0.2em] text-gold uppercase">The road to the cup</h2>
+        <p className="mt-2 text-[15px] leading-relaxed text-white/80">
+          Qualify, then a group, then a knockout bracket all the way to a final. Win it and a star
+          goes on your crest.
+        </p>
+        <button
+          type="button"
+          onClick={onStart}
+          className="mt-3 w-full rounded-2xl bg-gold px-4 py-3 text-base font-black text-ink active:opacity-90"
+        >
+          Qualify for a cup
+        </button>
+      </section>
+    )
+  }
+
+  const { campaign: c, fixture, opponent } = safe
+
+  return (
+    <section data-testid="campaign-card" className="rounded-2xl bg-gold/10 p-4 ring-1 ring-gold/30">
+      <h2 className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
+        The road to the cup &middot; {stageLabel(c)}
+      </h2>
+
+      {c.stage === 'qualifying' && (
+        <p className="mt-1.5 text-[15px] leading-relaxed text-white/80">{qualifyingLine(c.results)}</p>
+      )}
+
+      {c.stage === 'group' && (
+        <ul className="mt-2 flex flex-col gap-1" data-testid="group-table">
+          {myGroupStandings(c).map((row) => (
+            <li
+              key={row.teamId}
+              className="flex items-center gap-2 rounded-lg bg-black/15 px-2.5 py-1.5 text-sm"
+            >
+              <span className="min-w-0 flex-1 truncate font-semibold">{row.name}</span>
+              <span className="text-white/50">{row.played}p</span>
+              <span className="w-8 text-right font-bold text-gold">{row.points}pt</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <button
+        type="button"
+        data-testid="campaign-fixture"
+        onClick={() => onKickoff(opponent, fixture.stakes, true)}
+        className="mt-3 flex w-full items-center gap-3 rounded-2xl bg-black/25 px-4 py-3 text-left ring-1 ring-white/10 active:bg-black/40"
+      >
+        <Swatch opponent={opponent} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs text-white/55">Next up</span>
+          <span className="block font-bold">{opponentName(opponent.id)}</span>
+        </span>
+        <span className="text-xl font-black">{opponent.rating}</span>
+      </button>
+      <p className="mt-1 text-xs text-white/45">Your overall is {Math.round(clampStat(overall))}.</p>
+    </section>
+  )
+}
 
 const ROSTER_BY_RATING = [...OPPONENTS].sort((a, b) => b.rating - a.rating)
 

@@ -1,11 +1,15 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppShell, trackFor } from './AppShell'
+import { AppShell, advanceCampaign, trackFor } from './AppShell'
 import { TRACK_NAMES } from '../audio/music'
 import { CELEBRATION_MS } from '../screens/Match'
+import type { MatchResult } from '../screens/Match'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft, Country } from '../store/storage'
 import { giveAnyAnswer, hasQuestionOnScreen } from '../test/answering'
+import { OPPONENTS_BY_ID } from '../data/opponents'
+import { ME, drawQualifying } from '../engine/campaign'
+import type { Campaign } from '../engine/campaign'
 
 const COUNTRY: Country = {
   name: 'Rionia',
@@ -373,5 +377,109 @@ describe('trackFor', () => {
       expect(TRACK_NAMES).toContain(trackFor({ ...base, tab }))
     }
     expect(TRACK_NAMES).toContain(trackFor({ ...base, fixture: { stakes: 'knockout' } }))
+  })
+})
+
+describe('advanceCampaign', () => {
+  const played = (us: number, them: number): MatchResult => ({
+    matchId: 'm1',
+    opponent: OPPONENTS_BY_ID.spain!,
+    score: [us, them],
+    questions: new Map(),
+  })
+
+  /** Reads the current campaign back from the store — the loop-driving tests advance a real campaign call by call, exactly as `Session` does. */
+  const currentCampaign = (): Campaign => {
+    const c = getStore().getState().campaign
+    if (c === null) throw new Error('test setup: expected a campaign in progress')
+    return c
+  }
+
+  beforeEach(() => {
+    getStore().setCountry(COUNTRY)
+  })
+
+  it('does nothing at all to an ordinary exhibition match', () => {
+    const campaign = drawQualifying(58, 1)
+    const result = advanceCampaign(played(2, 0), false, campaign, getStore().getState().country)
+    expect(result).toEqual(played(2, 0))
+    expect(result.campaignOutcome).toBeUndefined()
+    expect(getStore().getState().campaign).toBeNull() // never written
+  })
+
+  it('does nothing when isCampaign is true but there is no active campaign to advance', () => {
+    const result = advanceCampaign(played(2, 0), true, null, getStore().getState().country)
+    expect(result.campaignOutcome).toBeUndefined()
+  })
+
+  it('advances a real campaign fixture and writes the result to the store', () => {
+    const campaign = drawQualifying(58, 1)
+    const result = advanceCampaign(played(2, 0), true, campaign, getStore().getState().country)
+    expect(result.campaignOutcome?.kind).toBe('qualifying-continues')
+    expect(getStore().getState().campaign).not.toBeNull()
+  })
+
+  it('increments country.stars exactly when the outcome is champion, and never otherwise', () => {
+    getStore().setCampaign(drawQualifying(58, 1))
+
+    // Win qualifying (2 of 3).
+    advanceCampaign(played(2, 0), true, currentCampaign(), getStore().getState().country)
+    let r = advanceCampaign(played(2, 0), true, currentCampaign(), getStore().getState().country)
+    expect(r.campaignOutcome?.kind).toBe('qualified')
+    expect(getStore().getState().country?.stars).toBe(0) // untouched
+
+    // Win the whole group stage (3 group matches).
+    for (let i = 0; i < 3; i++) {
+      r = advanceCampaign(played(3, 0), true, currentCampaign(), getStore().getState().country)
+    }
+    expect(r.campaignOutcome?.kind).toBe('advanced-to-knockout')
+    expect(getStore().getState().country?.stars).toBe(0)
+
+    // Win all four knockout rounds: r16, qf, sf, final.
+    const kinds: string[] = []
+    for (let i = 0; i < 4; i++) {
+      r = advanceCampaign(played(3, 0), true, currentCampaign(), getStore().getState().country)
+      kinds.push(r.campaignOutcome!.kind)
+    }
+    expect(kinds).toEqual(['advanced', 'advanced', 'advanced', 'champion'])
+    expect(getStore().getState().country?.stars).toBe(1) // exactly one star, from exactly this
+    expect(getStore().getState().campaign).toBeNull() // the run is over either way
+  })
+
+  it('a losing run costs the run and never touches stars', () => {
+    getStore().setCampaign(drawQualifying(58, 1))
+    advanceCampaign(played(0, 2), true, currentCampaign(), getStore().getState().country)
+    const r = advanceCampaign(played(0, 2), true, currentCampaign(), getStore().getState().country)
+    expect(r.campaignOutcome?.kind).toBe('qualifying-failed')
+    expect(getStore().getState().campaign).toBeNull()
+    expect(getStore().getState().country?.stars).toBe(0)
+  })
+
+  it('never crashes on a campaign whose engine invariants are broken, and resets it rather than the log', () => {
+    // A "knockout" campaign with no pending tie for the player at all —
+    // applyCampaignResult must throw finding no tie to decide.
+    const broken = {
+      stage: 'knockout' as const,
+      seed: 1,
+      groups: [
+        [ME, 'a', 'b', 'c'],
+        ...Array.from({ length: 7 }, (_, i) => [`t${i}`, `u${i}`, `v${i}`, `w${i}`]),
+      ] as never,
+      groupMatches: [],
+      ties: [],
+    }
+    getStore().appendAttempt({
+      at: 1,
+      standardId: 'MT.4.NF.1',
+      difficulty: 50,
+      params: {},
+      given: '1',
+      correct: true,
+      latencyMs: 4000,
+      context: 'training',
+    })
+    expect(() => advanceCampaign(played(2, 0), true, broken, getStore().getState().country)).not.toThrow()
+    expect(getStore().getState().campaign).toBeNull()
+    expect(getStore().getState().attempts).toHaveLength(1) // untouched
   })
 })

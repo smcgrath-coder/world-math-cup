@@ -28,6 +28,8 @@
  */
 
 import type { Attempt, AttemptContext, ShotChoice } from './types'
+import type { Campaign, KnockoutRound, MatchOutcome } from '../engine/campaign'
+import { KNOCKOUT_ROUNDS, ME } from '../engine/campaign'
 
 export const STORAGE_KEY = 'wmc_v1'
 export const SCHEMA_VERSION = 1
@@ -76,6 +78,20 @@ export interface GameState {
   /** Append-only. Nothing outside this module may reorder or remove entries. */
   attempts: Attempt[]
   settings: Settings
+  /**
+   * The active World Cup run, or `null` between runs. Unlike everything else
+   * in this file, a campaign is not derived from the attempts log and cannot
+   * be — a scoreline is not recoverable from individual question attempts,
+   * which is exactly why the film room reads it from the match screen's own
+   * hand-off rather than reconstructing it. So this is real, independent
+   * state, and it gets the same treatment `country` does: validated on the
+   * way in, dropped rather than repaired if it cannot be trusted.
+   *
+   * Dropped, specifically, costs a run — the current qualifying series, group
+   * stage or knockout tie is gone and a fresh qualifying draw is needed. It
+   * never touches `attempts`, which is where his actual rating history lives.
+   */
+  campaign: Campaign | null
 }
 
 /** An attempt on its way in. The store owns the id. */
@@ -88,6 +104,8 @@ export interface LoadReport {
   droppedAttempts: number
   /** The saved country failed validation, so the creator will run again. */
   droppedCountry: boolean
+  /** The saved campaign failed validation. Costs the current run; his rating history is untouched. */
+  droppedCampaign: boolean
 }
 
 export interface LoadResult {
@@ -109,6 +127,7 @@ export function defaultState(): GameState {
     country: null,
     attempts: [],
     settings: { ...DEFAULT_SETTINGS },
+    campaign: null,
   }
 }
 
@@ -116,6 +135,7 @@ const cleanReport = (): LoadReport => ({
   corrupt: false,
   droppedAttempts: 0,
   droppedCountry: false,
+  droppedCampaign: false,
 })
 
 // ---------------------------------------------------------------------------
@@ -323,6 +343,131 @@ export function validateSettings(value: unknown): Settings {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// Campaign
+
+const isStringArray = (v: unknown, length: number): v is string[] =>
+  Array.isArray(v) && v.length === length && v.every(isFilledString)
+
+const OUTCOMES: Record<MatchOutcome, true> = { win: true, draw: true, loss: true }
+const ROUNDS: Record<KnockoutRound, true> = Object.fromEntries(
+  KNOCKOUT_ROUNDS.map((r) => [r, true]),
+) as Record<KnockoutRound, true>
+
+function validateFixture(value: unknown): { homeId: string; awayId: string; home: number; away: number } | null {
+  if (!isObject(value)) return null
+  const { homeId, awayId, home, away } = value
+  if (!isFilledString(homeId) || !isFilledString(awayId)) return null
+  if (!isFiniteNumber(home) || !isFiniteNumber(away)) return null
+  return { homeId, awayId, home, away }
+}
+
+function validateFixtures(value: unknown): NonNullable<ReturnType<typeof validateFixture>>[] | null {
+  if (!Array.isArray(value)) return null
+  const out: NonNullable<ReturnType<typeof validateFixture>>[] = []
+  for (const v of value) {
+    const f = validateFixture(v)
+    if (f === null) return null
+    out.push(f)
+  }
+  return out
+}
+
+/**
+ * Eight groups of four ids each, exactly the shape `drawGroups` produces.
+ *
+ * `ME` must appear exactly once across the whole draw — `myGroup` finds the
+ * player's group by searching for it, and a campaign where that search comes
+ * back empty (or ambiguous) is not one any screen can safely read from.
+ */
+function validateGroups(value: unknown): [string, string, string, string][] | null {
+  if (!Array.isArray(value) || value.length !== 8) return null
+  const out: [string, string, string, string][] = []
+  let meCount = 0
+  for (const g of value) {
+    if (!isStringArray(g, 4)) return null
+    meCount += g.filter((id) => id === ME).length
+    out.push(g as [string, string, string, string])
+  }
+  if (meCount !== 1) return null
+  return out
+}
+
+function validateQualifying(value: Record<string, unknown>): Campaign | null {
+  if (!isFiniteNumber(value.seed)) return null
+  if (!isStringArray(value.opponentIds, 3)) return null
+  const results = value.results
+  if (!Array.isArray(results) || results.length > 3) return null
+  if (!results.every((r) => typeof r === 'string' && r in OUTCOMES)) return null
+  return {
+    stage: 'qualifying',
+    seed: value.seed,
+    opponentIds: value.opponentIds as [string, string, string],
+    results: results as MatchOutcome[],
+  }
+}
+
+function validateGroupStage(value: Record<string, unknown>): Campaign | null {
+  if (!isFiniteNumber(value.seed)) return null
+  const groups = validateGroups(value.groups)
+  if (groups === null) return null
+  const matches = validateFixtures(value.matches)
+  if (matches === null) return null
+  return { stage: 'group', seed: value.seed, groups, matches }
+}
+
+function validateKnockout(value: Record<string, unknown>): Campaign | null {
+  if (!isFiniteNumber(value.seed)) return null
+  const groups = validateGroups(value.groups)
+  if (groups === null) return null
+  const groupMatches = validateFixtures(value.groupMatches)
+  if (groupMatches === null) return null
+
+  const raw = value.ties
+  if (!Array.isArray(raw)) return null
+  const ties = []
+  for (const t of raw) {
+    if (!isObject(t)) return null
+    if (typeof t.round !== 'string' || !(t.round in ROUNDS)) return null
+    if (!isFilledString(t.homeId) || !isFilledString(t.awayId)) return null
+    if (t.result === undefined) {
+      ties.push({ round: t.round as KnockoutRound, homeId: t.homeId, awayId: t.awayId })
+      continue
+    }
+    const result = validateFixture(t.result)
+    const winnerId = isObject(t.result) ? t.result.winnerId : undefined
+    const wentToPenalties = isObject(t.result) ? t.result.wentToPenalties : undefined
+    if (result === null || !isFilledString(winnerId) || typeof wentToPenalties !== 'boolean') return null
+    ties.push({
+      round: t.round as KnockoutRound,
+      homeId: t.homeId,
+      awayId: t.awayId,
+      result: { ...result, winnerId, wentToPenalties },
+    })
+  }
+
+  return { stage: 'knockout', seed: value.seed, groups, groupMatches, ties }
+}
+
+/**
+ * A stored campaign, or `null` if it cannot be trusted.
+ *
+ * Whole-campaign drop rather than field repair, unlike `validateAttempt`'s
+ * per-field leniency — the reasoning is the same one that put the comment on
+ * `GameState.campaign`: dropping this costs the current run, not his rating
+ * history, so there is no real history to protect by being clever about a
+ * half-broken bracket. A campaign missing a real invariant (`ME` inside a
+ * group, the right team count, a round name the engine recognises) is exactly
+ * as unusable as one that fails to parse at all.
+ */
+export function validateCampaign(value: unknown): Campaign | null {
+  if (!isObject(value)) return null
+  if (value.stage === 'qualifying') return validateQualifying(value)
+  if (value.stage === 'group') return validateGroupStage(value)
+  if (value.stage === 'knockout') return validateKnockout(value)
+  return null
+}
+
 /**
  * Read a stored blob. Pure, total, and never throws — the store is a thin shell
  * over this, and the interesting tests point straight at it.
@@ -370,6 +515,12 @@ export function parseState(raw: string | null): LoadResult {
     if (country === null) report.droppedCountry = true
   }
 
+  let campaign: Campaign | null = null
+  if (parsed.campaign !== undefined && parsed.campaign !== null) {
+    campaign = validateCampaign(parsed.campaign)
+    if (campaign === null) report.droppedCampaign = true
+  }
+
   // The counter is persisted, but the log is the authority when they disagree:
   // a truncated write can lose the counter while keeping the attempts, and a
   // reused id would let a reload change the order two tied attempts fold in.
@@ -382,6 +533,7 @@ export function parseState(raw: string | null): LoadResult {
       country,
       attempts,
       settings: validateSettings(parsed.settings),
+      campaign,
     },
     seq,
     report,
@@ -478,6 +630,11 @@ export class GameStore {
 
   setCountry(country: Country): void {
     this.commit({ ...this.state, country })
+  }
+
+  /** `null` both starts a fresh run and clears a finished one — winning the final and being knocked out both end the active campaign the same way. */
+  setCampaign(campaign: Campaign | null): void {
+    this.commit({ ...this.state, campaign })
   }
 
   updateSettings(patch: Partial<Settings>): void {

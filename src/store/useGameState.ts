@@ -18,6 +18,7 @@ import { useSyncExternalStore } from 'react'
 import { getStore } from './storage'
 import type { Attempt } from './types'
 import type { Country, GameState, Settings } from './storage'
+import type { Campaign } from '../engine/campaign'
 
 function useStoreSnapshot<T>(select: (state: GameState) => T): T {
   const store = getStore()
@@ -44,6 +45,11 @@ export function useCountry(): Country | null {
 
 export function useSettings(): Settings {
   return useStoreSnapshot((s) => s.settings)
+}
+
+/** Null between runs. */
+export function useCampaign(): Campaign | null {
+  return useStoreSnapshot((s) => s.campaign)
 }
 
 export { getStore }
