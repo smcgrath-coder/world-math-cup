@@ -43,7 +43,14 @@ export interface Attempt {
 
 export interface StandardRating {
   standardId: string
+  /** What actually shows on the card — rust subtracted, same as always. */
   rating: number
+  /**
+   * The rating with no rust taken off it — what he'd be back at the moment the
+   * rust burns off. Never lowered by time alone, only by a genuine miss.
+   * `rating` is always this minus whatever rust currently sits on the standard.
+   */
+  ratingClean: number
   attempts: number
   lastSeenAt: number | null
   /** Provisional until PROVISIONAL_ATTEMPTS. Renders as a dashed card segment. */

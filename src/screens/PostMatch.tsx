@@ -50,7 +50,7 @@ import {
   deriveRatings,
   deriveWorldRank,
 } from '../store/derive'
-import type { Attempt, Courage } from '../store/types'
+import type { Attempt, Courage, StandardRating } from '../store/types'
 import { useAttempts, useCountry } from '../store/useGameState'
 import type { Item } from '../engine/items/types'
 import type { Opponent } from '../data/opponents'
@@ -103,10 +103,43 @@ export interface Summary {
    */
   climbed: boolean
   crossings: Crossing[]
+  /**
+   * A standard he played this match that had visible rust on it at kickoff
+   * and less of it by full time — the one with the biggest gap closed, if
+   * more than one qualifies. `null` on most matches, which never touch a
+   * rusted standard at all.
+   */
+  rustBurnedOn: string | null
 }
 
 /** Attempts sort by minted id, which is the order they were appended in. */
 const byId = (a: Attempt, b: Attempt): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+/**
+ * A standard this match visibly de-rusted, if any — the one with the biggest
+ * gap closed, so a match that touches several rusted topics reports the one
+ * most worth saying something about.
+ *
+ * "Visible" is the same rounded threshold the card and the training ground
+ * both use: a rust gap that would never have shown up as a different number
+ * is not something this screen has anything true to say about either.
+ */
+function rustBurnedOn(
+  played: readonly Attempt[],
+  before: Map<string, StandardRating>,
+  after: Map<string, StandardRating>,
+): string | null {
+  let best: { id: string; closed: number } | null = null
+  for (const id of new Set(played.map((a) => a.standardId))) {
+    const b = before.get(id)
+    const a = after.get(id)
+    if (b === undefined || a === undefined) continue
+    if (Math.round(b.ratingClean) <= Math.round(b.rating)) continue // not visibly rusted at kickoff
+    const closed = b.ratingClean - b.rating - (a.ratingClean - a.rating)
+    if (closed > 0 && (best === null || closed > best.closed)) best = { id, closed }
+  }
+  return best?.id ?? null
+}
 
 const whole = (value: number): number => Math.round(clampStat(value))
 
@@ -205,6 +238,7 @@ export function summarise(attempts: readonly Attempt[], matchId: string): Summar
     rankTo: deriveWorldRank(overallAfter),
     climbed: overallAfter > overallBefore && rises.length > 0,
     crossings: crossings(played, earlier),
+    rustBurnedOn: rustBurnedOn(played, beforeRatings, afterRatings),
   }
 }
 
@@ -360,6 +394,8 @@ export function PostMatch({ matchId, opponent, score, questions, campaignOutcome
         )}
 
         <Moved summary={summary} climbed={summary.climbed && !won} />
+
+        {summary.rustBurnedOn !== null && <RustCard standardId={summary.rustBurnedOn} />}
 
         <CourageCard courage={summary.courage} />
 
@@ -528,6 +564,33 @@ function Row({ tag, name, from, to }: { tag: string; name: string; from: number;
         {up ? `+${to - from}` : `−${from - to}`}
       </span>
     </li>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * News that a topic shook some rust off this match.
+ *
+ * Says what happened — some came off, out there, tonight — and never why
+ * there was any to begin with. Silent on how much, silent on how long it took
+ * to build up: the only promise this card makes is the one the mechanic
+ * already keeps, that it comes off fast.
+ */
+function RustCard({ standardId }: { standardId: string }) {
+  const topic = LABELS_BY_STANDARD[standardId] ?? standardId
+  return (
+    <section
+      data-testid="rust-burned"
+      className="rounded-2xl bg-gold/12 p-4 ring-1 ring-gold/30"
+    >
+      <p className="text-[11px] font-bold tracking-[0.15em] text-gold/80 uppercase">
+        Shaking off the rust
+      </p>
+      <p className="mt-1.5 text-[15px] leading-relaxed text-white/85">
+        {topic} had some rust on it, and some of that came off out there. It never takes long.
+      </p>
+    </section>
   )
 }
 

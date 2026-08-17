@@ -344,6 +344,67 @@ describe('campaign news', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('rust', () => {
+  const FIVE_WEEKS_MS = 5 * 7 * 24 * 60 * 60 * 1000
+
+  /** A standard settled well past provisional, left alone for five weeks, then played correctly all through this match — visibly rusted at kickoff, some of it burned off by full time. */
+  function rustyThenBurned(): void {
+    const historyAt = NOW - FIVE_WEEKS_MS - 60 * MINUTE
+    clock = historyAt
+    save(Array.from({ length: 8 }, () => draft({ difficulty: 60, correct: true, context: 'match', at: historyAt })))
+    clock = NOW
+    save(Array.from({ length: 6 }, () => draft({ difficulty: 60, correct: true, matchId: 'm1', at: NOW })))
+  }
+
+  it('names a standard that shook some rust off this match', () => {
+    rustyThenBurned()
+    const summary = summarise(getStore().getState().attempts, 'm1')
+    expect(summary.rustBurnedOn).toBe('MT.4.NF.1')
+
+    render(<PostMatch matchId="m1" opponent={CURACAO} score={[3, 0]} />)
+    const card = screen.getByTestId('rust-burned')
+    expect(card).toHaveTextContent(/equivalent fractions/i)
+    expect(card).toHaveTextContent(/rust/i)
+  })
+
+  it('says nothing at all when nothing played this match was ever rusted', () => {
+    clock = NOW - 60 * MINUTE
+    save([draft({ matchId: 'm1' }), draft({ matchId: 'm1', correct: false, given: '-1' })])
+
+    render(<PostMatch matchId="m1" opponent={CURACAO} score={[1, 0]} />)
+    expect(screen.queryByTestId('rust-burned')).toBeNull()
+  })
+
+  it('says nothing when the gap at kickoff was real but too small to ever have shown up as a different number', () => {
+    // A few minutes between training and the match, on the same standard —
+    // genuinely nonzero elapsed time, and nowhere near enough of it to round
+    // to anything he could have seen as rust. Recovering from dust nobody
+    // could see is not a thing this card exists to announce.
+    clock = NOW - 5 * MINUTE
+    save(Array.from({ length: 8 }, () => draft({ difficulty: 60, correct: true, context: 'match' })))
+    clock = NOW
+    save(Array.from({ length: 6 }, () => draft({ difficulty: 60, correct: true, matchId: 'm1' })))
+
+    const summary = summarise(getStore().getState().attempts, 'm1')
+    expect(summary.rustBurnedOn).toBeNull()
+    render(<PostMatch matchId="m1" opponent={CURACAO} score={[3, 0]} />)
+    expect(screen.queryByTestId('rust-burned')).toBeNull()
+  })
+
+  it('never mentions a day, a week, or being away, on the rust card or anywhere else on the screen', () => {
+    rustyThenBurned()
+    render(<PostMatch matchId="m1" opponent={CURACAO} score={[3, 0]} />)
+    const card = screen.getByTestId('rust-burned')
+    expect(card.textContent).not.toMatch(/\bdays?\b|\bweeks?\b|\bmonths?\b/i)
+    // "away" on its own is an existing football idiom in this game — "a ball
+    // got away from you" — so only the phrasing that would actually mean
+    // *he* was away is checked for, and only on the card this feature added.
+    expect(card.textContent).not.toMatch(/\byou('?re| were)? away\b|\btime away\b|absen|since you|last (time|played)/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+
 describe('crossings', () => {
   const at = (over: Partial<Attempt>): Attempt => ({
     id: 'a000000000001',

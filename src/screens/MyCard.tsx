@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Character } from '../components/Character'
 import { PlayerCard } from '../components/PlayerCard'
 import { useAttempts, useCountry } from '../store/useGameState'
-import { deriveCard, deriveCourage, deriveRatings } from '../store/derive'
+import { deriveCard, deriveCardClean, deriveCourage, deriveRatings } from '../store/derive'
 
 /**
  * The card tab: who he is, and what he has gone for.
@@ -29,12 +29,13 @@ export function MyCard({ onTrain }: MyCardProps) {
   const country = useCountry()
   const attempts = useAttempts()
 
-  const { card, ratings, courage } = useMemo(() => {
+  const { card, cardClean, ratings, courage } = useMemo(() => {
     const now = Date.now()
     const derived = deriveRatings(attempts, now)
     return {
       ratings: derived,
       card: deriveCard(derived, attempts, now),
+      cardClean: deriveCardClean(derived, attempts, now),
       courage: deriveCourage(attempts),
     }
   }, [attempts])
@@ -54,7 +55,7 @@ export function MyCard({ onTrain }: MyCardProps) {
       */}
       <Character name="rion-portrait" alt="You, in your kit" className="-mb-2 w-28" />
 
-      <PlayerCard country={country} card={card} ratings={ratings} />
+      <PlayerCard country={country} card={card} cardClean={cardClean} ratings={ratings} />
 
       <section
         data-testid="courage"

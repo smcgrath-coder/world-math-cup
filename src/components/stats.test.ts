@@ -13,6 +13,7 @@ function ratings(named: Record<string, [rating: number, attempts: number]> = {})
     out.set(id, {
       standardId: id,
       rating,
+      ratingClean: rating,
       attempts,
       lastSeenAt: attempts > 0 ? 1_000 : null,
       provisional: attempts < 5,

@@ -506,6 +506,10 @@ function biasedRatings(
       lastSeenAt: existing?.lastSeenAt ?? null,
       provisional: existing?.provisional ?? true,
       rating: ratingFor(deps.ratings, id) + shift,
+      // Shifted by the same amount, so a biased map still satisfies "rating
+      // is clean minus rust" rather than reporting negative rust to anything
+      // that later reads both fields off it.
+      ratingClean: (existing?.ratingClean ?? SEED_RATING) + shift,
     })
   }
   return out

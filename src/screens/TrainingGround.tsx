@@ -47,7 +47,7 @@ import { generatorFor } from '../engine/items/generators'
 import { makeRng } from '../engine/items/rng'
 import type { Item, ItemGenerator, Rng } from '../engine/items/types'
 import { selectItem } from '../engine/select'
-import { CARD_STATS, deriveCard, deriveRatings } from '../store/derive'
+import { CARD_STATS, deriveCard, deriveCardClean, deriveRatings } from '../store/derive'
 import { getStore } from '../store/storage'
 import type { AttemptDraft } from '../store/storage'
 import type { Attempt, StandardRating } from '../store/types'
@@ -473,9 +473,13 @@ function Drill({
   const log = useMemo(() => withPending(attempts, session.pending), [attempts, session.pending])
   const ratings = useMemo(() => deriveRatings(log, now), [log, now])
   const card = useMemo(() => deriveCard(ratings, log, now), [ratings, log, now])
+  const cardClean = useMemo(() => deriveCardClean(ratings, log, now), [ratings, log, now])
 
   const exact = clampStat(card[scope.stat])
   const shown = Math.round(exact)
+  // Same threshold the card itself uses: real only once it would show up as a
+  // different number, never a fraction of a point nobody could see anyway.
+  const rusted = Math.round(clampStat(cardClean[scope.stat])) > shown
   /** How far along it is to the next whole point. Movement he can see every answer. */
   const toNext = exact + 0.5 - Math.floor(exact + 0.5)
 
@@ -629,6 +633,17 @@ function Drill({
           <p className="mt-3 text-[13px] leading-snug text-white/55">
             No clock and nothing on the line. Stop whenever you’ve had enough.
           </p>
+
+          {/* One line, said once, and never a word about why it's rusty —
+              that part is nobody's business but his. "Shakes off fast" is
+              the whole promise: relearning really is quicker than learning,
+              and this is the game saying so rather than just hoping he
+              notices. */}
+          {rusted && (
+            <p data-testid="rust-coach-line" className="mt-1.5 text-[13px] leading-snug font-semibold text-gold">
+              There’s some rust on this one. A few of these and it shakes right off.
+            </p>
+          )}
         </div>
       </header>
 

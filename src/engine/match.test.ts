@@ -67,7 +67,7 @@ const PANAMA = OPPONENTS.find((o) => o.id === 'panama')!
 function ratingsAt(rating: number): Map<string, StandardRating> {
   const out = new Map<string, StandardRating>()
   for (const id of RATED_STANDARD_IDS) {
-    out.set(id, { standardId: id, rating, attempts: 10, lastSeenAt: 0, provisional: false })
+    out.set(id, { standardId: id, rating, ratingClean: rating, attempts: 10, lastSeenAt: 0, provisional: false })
   }
   return out
 }
@@ -1798,6 +1798,7 @@ describe('invariants', () => {
     corrupt.set('MT.4.NF.1', {
       standardId: 'MT.4.NF.1',
       rating: Number.NaN,
+      ratingClean: Number.NaN,
       attempts: 3,
       lastSeenAt: null,
       provisional: true,

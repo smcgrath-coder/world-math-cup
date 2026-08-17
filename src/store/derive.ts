@@ -18,6 +18,16 @@
  *  - Nothing may fall far enough to make the game hand him *harder* items than
  *    the pressure band intends (the hard floor).
  *  - Speed may be rewarded; slowness may never be punished (PAC).
+ *
+ * A fifth belongs on that list now: **decay must never be a silent loss.**
+ * Every rated standard carries two numbers, not one — `rating` (what shows,
+ * rust and all) and `ratingClean` (what he's actually at, rust never touches
+ * it). The gap between them is rust, it is always temporary, and it comes off
+ * fast: a correct answer on a rusted standard climbs at double speed until
+ * `rating` catches back up to `ratingClean`, then stops boosting, because
+ * catching up is not the same as getting better. Neither number is computed
+ * by mentioning a day, a week, or an absence anywhere — the UI that reads
+ * them is under the same rule.
  */
 
 import { DOMAIN_TO_STAT, STANDARDS_BY_ID } from '../curriculum/standards.generated'
@@ -175,6 +185,21 @@ function decayed(raw: number, lastSeenAt: number, now: number): number {
 }
 
 /**
+ * Whether `displayed` and `clean` would actually look different on the card
+ * right now — the gate both the recovery boost below and the rusted Coach
+ * line use.
+ *
+ * Rounded rather than exact. `decayed` never hands back a value exactly equal
+ * to its input once any time at all has passed, so two attempts five seconds
+ * apart already differ by a dust-sized fraction of a point. That is not rust
+ * in any sense worth reacting to — it only becomes real once it would round
+ * to a number he can actually see is different.
+ */
+function visiblyRusted(displayed: number, clean: number): boolean {
+  return Math.round(displayed) < Math.round(clean)
+}
+
+/**
  * Replay the try-out's per-domain ladders out of the log.
  *
  * The try-out is a *placement test*, and the ladder it runs — start at 45, +8
@@ -257,24 +282,38 @@ function seedFor(
  * Standards that have never been attempted are still present, showing the
  * rating they *would* start at, so item selection has something to aim at
  * without a special case for a debut.
+ *
+ * **Two running numbers per standard, not one.** `clean` is exactly what this
+ * function always computed — the Elo walk, untouched by time. `displayed` is
+ * the same walk with rust applied as it goes: projected forward whenever a
+ * gap opens up before the next attempt, and — the actual fix here — climbed
+ * back out of at double speed on a correct answer, capped so the climb can
+ * land on `clean` and never past it. `rating` below is `displayed`, still
+ * projected one last time to `now` exactly as it always was; `ratingClean` is
+ * new, and is what a rusted card is measured against.
  */
 export function deriveRatings(attempts: Attempt[], now: number): Map<string, StandardRating> {
   const ordered = attempts.slice().sort(byTime)
   const rungs = tryoutRungs(ordered)
 
-  /** Running rating per standard. Only ever holds standards that were attempted. */
-  const rated = new Map<string, number>()
+  /** The Elo walk, never touched by decay. Only ever holds standards that were attempted. */
+  const clean = new Map<string, number>()
+  /** The same walk with rust folded in — what actually reaches the card. */
+  const displayed = new Map<string, number>()
   const counts = new Map<string, number>()
   const lastSeen = new Map<string, number>()
 
   for (const a of ordered) {
     const id = a.standardId
-    let rating = rated.get(id)
+    let rating = clean.get(id)
     if (rating === undefined) {
-      rating = seedFor(id, rated, rungs)
-      rated.set(id, rating)
+      rating = seedFor(id, clean, rungs)
+      clean.set(id, rating)
+      // A debut has no history to have rusted, so the two lines start in sync.
+      displayed.set(id, rating)
     }
 
+    const prevSeenAt = lastSeen.get(id)
     const seen = counts.get(id) ?? 0
     // Try-out questions are still questions he answered: they count as evidence
     // and they set `lastSeenAt`, so the card shows the placement and the
@@ -287,21 +326,43 @@ export function deriveRatings(attempts: Attempt[], now: number): Map<string, Sta
     // damps it back towards 50 — which is exactly the bug this avoids.
     if (a.context === 'tryout') continue
 
+    // Whatever gap sits before this attempt gets a chance to rust `displayed`
+    // before the update below decides whether this answer is climbing out of
+    // one.
+    if (prevSeenAt !== undefined) {
+      displayed.set(id, decayed(displayed.get(id)!, prevSeenAt, a.at))
+    }
+    const rusted = visiblyRusted(displayed.get(id)!, rating)
+
     // Half K while provisional, for the same reason as domain seeding: not
     // enough evidence yet to move the card hard in either direction.
     const k = kFor(a.context) * (seen < PROVISIONAL_ATTEMPTS ? 0.5 : 1)
-    rated.set(id, stepped(rating, a.difficulty, a.correct, k, floorFor(a.choices)))
+    const guessFloor = floorFor(a.choices)
+
+    const cleanNext = stepped(rating, a.difficulty, a.correct, k, guessFloor)
+    clean.set(id, cleanNext)
+
+    // The boost is only for climbing out — a miss while rusted moves
+    // `displayed` at the same K as `clean`, from wherever rust had already
+    // left it, exactly the way a miss always has.
+    const kDisplayed = rusted && a.correct ? k * 2 : k
+    let displayedNext = stepped(displayed.get(id)!, a.difficulty, a.correct, kDisplayed, guessFloor)
+    if (rusted && a.correct) displayedNext = Math.min(displayedNext, cleanNext)
+    displayed.set(id, displayedNext)
   }
 
   const out = new Map<string, StandardRating>()
-  for (const id of new Set([...RATED_STANDARD_IDS, ...rated.keys()])) {
+  for (const id of new Set([...RATED_STANDARD_IDS, ...clean.keys()])) {
     const attemptCount = counts.get(id) ?? 0
     if (attemptCount === 0) {
+      // The seed a debut would get, computed against the final ratings. No
+      // decay: a standard never attempted has no last-seen time to decay
+      // from, and nothing to have rusted either.
+      const seed = seedFor(id, clean, rungs)
       out.set(id, {
         standardId: id,
-        // The seed a debut would get, computed against the final ratings. No
-        // decay: a standard never attempted has no last-seen time to decay from.
-        rating: seedFor(id, rated, rungs),
+        rating: seed,
+        ratingClean: seed,
         attempts: 0,
         lastSeenAt: null,
         provisional: true,
@@ -311,7 +372,8 @@ export function deriveRatings(attempts: Attempt[], now: number): Map<string, Sta
     const at = lastSeen.get(id)!
     out.set(id, {
       standardId: id,
-      rating: decayed(rated.get(id)!, at, now),
+      rating: decayed(displayed.get(id)!, at, now),
+      ratingClean: clean.get(id)!,
       attempts: attemptCount,
       lastSeenAt: at,
       provisional: attemptCount < PROVISIONAL_ATTEMPTS,
@@ -344,14 +406,20 @@ export function deriveRatings(attempts: Attempt[], now: number): Map<string, Sta
  *
  * PAC still decays like the other stats, from the last time he played at all
  * rather than the last time he was quick — staleness is not punishment, and a
- * slow session is still a session.
+ * slow session is still a session. And it rusts and recovers like the other
+ * stats too: `clean` is the walk above, untouched; `pac` is that walk with
+ * rust folded in, boosted back out of it at double speed on a fast correct
+ * answer, capped at `clean` exactly as every other standard is. See
+ * `deriveRatings` for the fuller version of the same two-line idea.
  */
-function derivePace(attempts: Attempt[], now: number): number {
+function derivePace(attempts: Attempt[], now: number): { pac: number; pacClean: number } {
   const ordered = attempts.slice().sort(byTime)
-  if (ordered.length === 0) return SEED_RATING
+  if (ordered.length === 0) return { pac: SEED_RATING, pacClean: SEED_RATING }
 
-  let pac = SEED_RATING
+  let clean = SEED_RATING
+  let displayed = SEED_RATING
   let wins = 0
+  let lastAt: number | undefined
 
   for (const a of ordered) {
     if (!a.correct) continue
@@ -361,26 +429,72 @@ function derivePace(attempts: Attempt[], now: number): number {
     // Written as `!(speed > 0)` so a NaN or missing latency also does nothing.
     if (!(speed > 0)) continue
 
+    if (lastAt !== undefined) displayed = decayed(displayed, lastAt, a.at)
+    const rusted = visiblyRusted(displayed, clean)
+
     const k = kFor(a.context) * (wins < PROVISIONAL_ATTEMPTS ? 0.5 : 1) * Math.min(1, speed)
+    const guessFloor = floorFor(a.choices)
     // `updateRating` with `correct: true` can only go up, but the `max` is a
     // rail rather than a comment: nothing that happens in here may lower PAC,
-    // including a non-finite step arriving from a corrupt log.
+    // including a non-finite step arriving from a corrupt log. Both lines
+    // carry the same rail.
     // The guess floor applies here too. Tapping the right one of two buttons
     // quickly is not evidence of recall speed, and PAC is the one stat measured
     // in milliseconds.
-    pac = Math.max(pac, stepped(pac, difficulty, true, k, floorFor(a.choices)))
+    const cleanNext = Math.max(clean, stepped(clean, difficulty, true, k, guessFloor))
+    let displayedNext = Math.max(displayed, stepped(displayed, difficulty, true, rusted ? k * 2 : k, guessFloor))
+    if (rusted) displayedNext = Math.min(displayedNext, cleanNext)
+
+    clean = cleanNext
+    displayed = displayedNext
     wins += 1
+    lastAt = a.at
   }
 
-  return decayed(pac, ordered[ordered.length - 1]!.at, now)
+  return {
+    pac: decayed(displayed, ordered[ordered.length - 1]!.at, now),
+    pacClean: clean,
+  }
+}
+
+/**
+ * The mean of each domain's *attempted* standards, picking whichever number
+ * off `StandardRating` the caller wants averaged.
+ *
+ * Shared by `deriveCard` and `deriveCardClean` so the two can never quietly
+ * drift into averaging different sets of standards — only which field of each
+ * `StandardRating` they read differs. A standard he has never been given does
+ * not count as 50 and does not drag the stat down; a domain with no history at
+ * all shows the seed. PAC is not a domain stat and is left at the seed here;
+ * both callers overwrite it with their own version of `derivePace`'s result.
+ */
+function averageByDomain(
+  ratings: Map<string, StandardRating>,
+  pick: (rating: StandardRating) => number,
+): Card {
+  const sums = new Map<CardStat, { sum: number; n: number }>()
+
+  for (const rating of ratings.values()) {
+    if (rating.attempts === 0) continue
+    const domain = STANDARDS_BY_ID[rating.standardId]?.domain
+    if (!domain) continue
+    const stat = DOMAIN_TO_STAT[domain]
+    const bucket = sums.get(stat) ?? { sum: 0, n: 0 }
+    bucket.sum += pick(rating)
+    bucket.n += 1
+    sums.set(stat, bucket)
+  }
+
+  const out = {} as Record<CardStat, number>
+  for (const stat of CARD_STATS) {
+    const bucket = sums.get(stat)
+    out[stat] = bucket && bucket.n > 0 ? bucket.sum / bucket.n : SEED_RATING
+  }
+  return out
 }
 
 /**
  * The six card stats.
- *
- * Five are the mean of their domain's *attempted* standards. A standard he has
- * never been given does not count as 50 and does not drag the stat down; a
- * domain with no history at all shows the seed.
  *
  * NOTE — this takes `now` on top of the two arguments the plan specified. PAC
  * is derived from the log rather than from the ratings map, and it decays like
@@ -393,32 +507,24 @@ export function deriveCard(
   attempts: Attempt[],
   now: number,
 ): Card {
-  const sums = new Map<CardStat, { sum: number; n: number }>()
+  return { ...averageByDomain(ratings, (r) => r.rating), PAC: derivePace(attempts, now).pac }
+}
 
-  for (const rating of ratings.values()) {
-    if (rating.attempts === 0) continue
-    const domain = STANDARDS_BY_ID[rating.standardId]?.domain
-    if (!domain) continue
-    const stat = DOMAIN_TO_STAT[domain]
-    const bucket = sums.get(stat) ?? { sum: 0, n: 0 }
-    bucket.sum += rating.rating
-    bucket.n += 1
-    sums.set(stat, bucket)
-  }
-
-  const statOf = (stat: CardStat) => {
-    const bucket = sums.get(stat)
-    return bucket && bucket.n > 0 ? bucket.sum / bucket.n : SEED_RATING
-  }
-
-  return {
-    PAC: derivePace(attempts, now),
-    SHO: statOf('SHO'),
-    PAS: statOf('PAS'),
-    DRI: statOf('DRI'),
-    DEF: statOf('DEF'),
-    PHY: statOf('PHY'),
-  }
+/**
+ * The same six stats with the rust taken back off — what the card is
+ * measured against to decide whether there is anything to show as rusted.
+ *
+ * Never lower than `deriveCard`'s own numbers: rust only ever subtracts from
+ * `ratingClean`/`pacClean` to produce the displayed figure, never the other
+ * way round. A card with nothing rusted anywhere has this equal to `deriveCard`
+ * stat for stat.
+ */
+export function deriveCardClean(
+  ratings: Map<string, StandardRating>,
+  attempts: Attempt[],
+  now: number,
+): Card {
+  return { ...averageByDomain(ratings, (r) => r.ratingClean), PAC: derivePace(attempts, now).pacClean }
 }
 
 /** The number on the front of the card. Left unrounded; the card rounds it. */

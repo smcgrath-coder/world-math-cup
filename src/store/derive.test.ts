@@ -171,7 +171,13 @@ describe('deriveRatings — provisional', () => {
 
   it('halves K on the attempts taken while provisional and stops halving at the same point', () => {
     const d = 50
-    const as = run(6, { difficulty: d, correct: true, context: 'training' })
+    // Same timestamp throughout, deliberately: this test is about K, not about
+    // decay, and a session with real gaps would rust by a few thousandths of a
+    // point between one attempt and the next — real, but not what is being
+    // measured here.
+    const as = Array.from({ length: 6 }, () =>
+      attempt({ at: T0, difficulty: d, correct: true, context: 'training' }),
+    )
     const after = (n: number) => ratingOf(as.slice(0, n), 'MT.4.NF.1', lastAt(as.slice(0, n)))
 
     // The fifth attempt is the last one taken while provisional: half K.
@@ -213,6 +219,122 @@ describe('deriveRatings — decay', () => {
 
   it('leaves never-attempted standards alone, since they have no last-seen time', () => {
     expect(deriveRatings([], T0 + 500 * WEEK_MS).get('MT.4.NF.1')?.rating).toBe(SEED_RATING)
+  })
+})
+
+describe('deriveRatings — rust', () => {
+  /** Six identical-timestamp attempts: past provisional, and — same reasoning as elsewhere in this file — no internal gaps for decay to nibble on before the scenario under test even begins. */
+  const settled = (over: Partial<Attempt> = {}) =>
+    Array.from({ length: 6 }, () =>
+      attempt({ standardId: 'MT.4.NF.1', at: T0, difficulty: 50, correct: true, context: 'match', ...over }),
+    )
+
+  it('is always clean minus displayed, and never goes negative', () => {
+    const as = settled()
+    for (let weeks = 0; weeks <= 12; weeks += 0.5) {
+      const r = deriveRatings(as, lastAt(as) + weeks * WEEK_MS).get('MT.4.NF.1')!
+      expect(r.ratingClean - r.rating, `week ${weeks}`).toBeGreaterThanOrEqual(-1e-9)
+    }
+  })
+
+  it('a log with no gaps has zero rust, on every standard, not only the one touched', () => {
+    const as = settled()
+    const ratings = deriveRatings(as, lastAt(as))
+    for (const [id, r] of ratings) {
+      expect(r.rating, id).toBe(r.ratingClean)
+    }
+  })
+
+  it('a correct answer on a rusted standard climbs at exactly double the plain rate, while it stays under the ceiling', () => {
+    const as = settled()
+    const rustyAt = lastAt(as) + 6 * WEEK_MS
+    const before = deriveRatings(as, rustyAt).get('MT.4.NF.1')!
+    // Genuinely rusted, and comfortably past dust — six weeks at 1.5/week is 9
+    // points, nowhere near the decay floor from a rating settled around 50-ish.
+    const rustGap = before.ratingClean - before.rating
+    expect(rustGap).toBeCloseTo(6 * DECAY_PER_WEEK, 6)
+
+    // Pitched at the rusted level itself — not rounded, so the expected score
+    // is exactly 0.5 and the plain gain is exactly half of K_MATCH — and small
+    // enough next to the nine-point rust gap that doubling it still leaves
+    // room under the ceiling.
+    const difficulty = before.rating
+    const plainGain = K_MATCH * 0.5
+    expect(2 * plainGain, 'fixture check: must stay under the rust gap').toBeLessThan(rustGap)
+
+    const recovered = deriveRatings(
+      [...as, attempt({ standardId: 'MT.4.NF.1', at: rustyAt, difficulty, correct: true, context: 'match' })],
+      rustyAt,
+    ).get('MT.4.NF.1')!
+
+    expect(recovered.rating).toBeCloseTo(before.rating + 2 * plainGain, 6)
+    // Still short of clean — this one step was not enough to fully close a
+    // nine-point gap at K_MATCH, doubled or not.
+    expect(recovered.rating).toBeLessThan(recovered.ratingClean)
+  })
+
+  it('caps the climb at the clean ceiling rather than letting a big boosted step vault past it', () => {
+    const as = settled()
+    // A small gap on purpose — a big one gives the boosted step so far to
+    // travel that it can land short of even the *clean* ceiling's own single
+    // plain step, which would prove nothing about capping either way. A small
+    // gap next to the hardest item on the scale is what reliably forces the
+    // overshoot the cap exists for.
+    const rustyAt = lastAt(as) + WEEK_MS
+    const before = deriveRatings(as, rustyAt).get('MT.4.NF.1')!
+
+    const recovered = deriveRatings(
+      [...as, attempt({ standardId: 'MT.4.NF.1', at: rustyAt, difficulty: 99, correct: true, context: 'match' })],
+      rustyAt,
+    ).get('MT.4.NF.1')!
+
+    // The uncapped boosted step really would have overshot, or this test
+    // would not be exercising the cap at all.
+    const uncapped = updateRating(before.rating, 99, true, K_MATCH * 2)
+    expect(uncapped, 'fixture check: must actually threaten to overshoot').toBeGreaterThan(recovered.ratingClean)
+
+    expect(recovered.rating).toBe(recovered.ratingClean)
+  })
+
+  it('does not boost a miss on a rusted standard — it moves at the same rate a clean standard would', () => {
+    const as = settled()
+    const rustyAt = lastAt(as) + 6 * WEEK_MS
+    const before = deriveRatings(as, rustyAt).get('MT.4.NF.1')!
+    const difficulty = 0 // the adversarial case: missing an easy item costs the most
+
+    const missed = deriveRatings(
+      [...as, attempt({ standardId: 'MT.4.NF.1', at: rustyAt, difficulty, correct: false, context: 'match' })],
+      rustyAt,
+    ).get('MT.4.NF.1')!
+
+    expect(missed.rating).toBeCloseTo(updateRating(before.rating, difficulty, false, K_MATCH), 6)
+  })
+
+  it('stops boosting the moment the clean level is regained, and grows at the plain rate from there', () => {
+    // A rust gap small enough that one easy, generous correct answer clears
+    // it outright.
+    const as = settled()
+    const rustyAt = lastAt(as) + WEEK_MS // one week: 1.5 points, visible, small
+    const before = deriveRatings(as, rustyAt).get('MT.4.NF.1')!
+    expect(before.ratingClean - before.rating).toBeCloseTo(DECAY_PER_WEEK, 6)
+
+    const firstBack = attempt({ standardId: 'MT.4.NF.1', at: rustyAt, difficulty: 90, correct: true, context: 'match' })
+    const afterFirst = deriveRatings([...as, firstBack], rustyAt).get('MT.4.NF.1')!
+    // Fully caught up, exactly — a difficulty-90 item against a rating in the
+    // fifties is more than enough to close a point and a half even at the
+    // plain rate, so the cap is what actually decides the landing spot.
+    expect(afterFirst.rating).toBe(afterFirst.ratingClean)
+
+    // One more correct answer, same timestamp, same difficulty — same
+    // timestamp deliberately, so this checks only whether the boost is still
+    // active and not also, incidentally, the session-dust a real gap would
+    // add on top. If the boost were still active this would jump by the same
+    // doubled amount again; it should instead move by exactly the plain,
+    // unboosted step.
+    const secondBack = attempt({ standardId: 'MT.4.NF.1', at: rustyAt, difficulty: 90, correct: true, context: 'match' })
+    const afterSecond = deriveRatings([...as, firstBack, secondBack], rustyAt).get('MT.4.NF.1')!
+
+    expect(afterSecond.rating).toBe(updateRating(afterFirst.rating, 90, true, K_MATCH))
   })
 })
 
@@ -274,12 +396,14 @@ describe('deriveRatings — seeding a newly taught standard', () => {
   // Deliberately short of the top of the scale: a history that pins NF.1 at 99
   // would make "seeds at the domain average" pass for the wrong reason, since
   // every candidate seed clamps to the same number up there.
-  const history = run(12, {
-    standardId: 'MT.4.NF.1',
-    difficulty: 75,
-    correct: true,
-    context: 'match',
-  })
+  //
+  // Same timestamp throughout rather than `run`'s usual minute-apart spacing —
+  // these tests check a seed against the exact rating a sibling landed at, and
+  // real gaps would rust NF.1 by a few thousandths between its own attempts,
+  // which is a real effect but not the one under test here.
+  const history = Array.from({ length: 12 }, () =>
+    attempt({ standardId: 'MT.4.NF.1', at: T0, difficulty: 75, correct: true, context: 'match' }),
+  )
 
   it('seeds the first standard seen at the default, with nothing else to go on', () => {
     const first = [attempt({ standardId: 'MT.4.NF.1', difficulty: 50, correct: true })]
@@ -317,21 +441,26 @@ describe('deriveRatings — seeding a newly taught standard', () => {
   })
 
   it('averages across every rated standard in the domain, not just the newest', () => {
-    // Interleaved on identical timestamps so both standards were last seen at
-    // `now` and neither carries decay the other does not — otherwise the seed,
-    // which is computed before decay, differs from the displayed mean by the
-    // few thousandths of a point one of them has rusted.
-    const seen = Array.from({ length: 20 }, (_, i) => [
+    // Every attempt on the same timestamp — both across the two standards and
+    // within each one's own twenty. Interleaving alone used to be enough to
+    // keep the two standards' decay in step; it is not enough on its own to
+    // also keep either one's rating exactly equal to its own undecayed walk,
+    // which now matters because a real gap between two attempts on the same
+    // standard rusts it by a few thousandths of a point internally, before
+    // `now` ever gets involved. The seed this test checks is computed from the
+    // undecayed walk either way; matching that in the displayed mean too is
+    // what the zero gap buys here.
+    const seen = Array.from({ length: 20 }, () => [
       attempt({
         standardId: 'MT.4.NF.1',
-        at: T0 + i * MINUTE,
+        at: T0,
         difficulty: 75,
         correct: true,
         context: 'match',
       }),
       attempt({
         standardId: 'MT.4.NF.2',
-        at: T0 + i * MINUTE,
+        at: T0,
         difficulty: 10,
         correct: false,
         context: 'match',
@@ -502,21 +631,31 @@ describe('deriveRatings — the try-out places rather than accumulates', () => {
     expectAtRung(seeded.rating, TOP_RUNG)
     // Four NF standards share four NF questions, so this one was asked once.
     expect(seeded.attempts).toBe(1)
+    // The walk itself is never decayed — only what is displayed from it is —
+    // so the seed this new attempt actually steps from is exactly the rung,
+    // regardless of where in the session NF.1 happened to be asked.
+    expect(seeded.ratingClean).toBe(TOP_RUNG)
 
+    const newAttemptAt = lastAt(tryout) + MINUTE
     const after = [
       ...tryout,
       attempt({
         standardId: 'MT.4.NF.1',
-        at: lastAt(tryout) + MINUTE,
+        at: newAttemptAt,
         difficulty: 60,
         correct: false,
         context: 'match',
       }),
     ]
-    expect(ratingOf(after, 'MT.4.NF.1')).toBeCloseTo(
-      updateRating(TOP_RUNG, 60, false, K_MATCH / 2),
-      10,
-    )
+    // What the *displayed* number stood at the instant before this attempt —
+    // asked of the code rather than hand-derived, since it depends on exactly
+    // how long ago NF.1's own last tryout question was, which this test does
+    // not otherwise pin down. It will be within a whisker of TOP_RUNG either
+    // way; the point of asking rather than assuming is that this attempt is a
+    // miss, so it is never boosted, and the update has to start from exactly
+    // where the walk actually was.
+    const before = deriveRatings(tryout, newAttemptAt).get('MT.4.NF.1')!.rating
+    expect(ratingOf(after, 'MT.4.NF.1')).toBeCloseTo(updateRating(before, 60, false, K_MATCH / 2), 10)
   })
 
   it('leaves a domain the try-out never covered on the old rules', () => {
@@ -550,10 +689,14 @@ describe('deriveRatings — the try-out places rather than accumulates', () => {
       }),
     )
     // NBT was never in the try-out, but he has since built history in NBT.5.
-    const nbt = Array.from({ length: 12 }, (_, i) =>
+    // Same timestamp throughout: this checks NBT.4's seed against NBT.5's
+    // exact rating, and real gaps between NBT.5's own attempts would rust it
+    // internally by a few thousandths — a real effect, but not one this test
+    // is about.
+    const nbt = Array.from({ length: 12 }, () =>
       attempt({
         standardId: 'MT.4.NBT.5',
-        at: lastAt(partial) + (i + 1) * MINUTE,
+        at: lastAt(partial) + MINUTE,
         difficulty: 75,
         correct: true,
         context: 'match',

@@ -14,7 +14,14 @@ import type { Pressure } from './select'
 function ratingsOf(values: Record<string, number>): Map<string, StandardRating> {
   const out = new Map<string, StandardRating>()
   for (const [standardId, rating] of Object.entries(values)) {
-    out.set(standardId, { standardId, rating, attempts: 10, lastSeenAt: 0, provisional: false })
+    out.set(standardId, {
+      standardId,
+      rating,
+      ratingClean: rating,
+      attempts: 10,
+      lastSeenAt: 0,
+      provisional: false,
+    })
   }
   return out
 }

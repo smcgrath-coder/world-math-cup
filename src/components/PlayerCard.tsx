@@ -65,6 +65,12 @@ interface PlayerFace {
   card: Card
   /** Drives the dashed segments and the per-standard numbers behind each stat. */
   ratings: Map<string, StandardRating>
+  /**
+   * The same six stats with the rust taken back off. Opponents have none —
+   * rust is a real-history mechanic and nothing else on this card gets it —
+   * so this is the one field `OpponentFace` never carries.
+   */
+  cardClean?: Card
   opponent?: never
 }
 
@@ -73,6 +79,7 @@ interface OpponentFace {
   country?: never
   card?: never
   ratings?: never
+  cardClean?: never
 }
 
 export type PlayerCardProps = (PlayerFace | OpponentFace) & { className?: string }
@@ -87,6 +94,7 @@ export function PlayerCard(props: PlayerCardProps) {
   const kit = mine ? props.country.kit : props.opponent.kit
   const crest = mine ? normalizeFlagSpec(props.country.flag) : kitCrest(props.opponent.kit)
   const ratings = mine ? props.ratings : undefined
+  const cardClean = mine ? props.cardClean : undefined
   const provisional = ratings ? provisionalStats(ratings) : []
 
   const exact = deriveOverall(card)
@@ -141,13 +149,18 @@ export function PlayerCard(props: PlayerCardProps) {
           {CARD_STATS.map((stat) => {
             const unproven = provisional.includes(stat)
             const value = Math.round(clampStat(card[stat]))
+            // Rust, the way the card shows it everywhere: only once it would
+            // actually round to a different number than what is displayed —
+            // never a fraction of a point nobody could see anyway.
+            const cleanValue = cardClean ? Math.round(clampStat(cardClean[stat])) : value
+            const rusted = cleanValue > value
             return (
               <motion.button
                 key={stat}
                 type="button"
                 data-stat={stat}
                 aria-expanded={open === stat}
-                aria-label={`${STAT_LABELS[stat].soccer} ${value}${unproven ? ', not yet proven' : ''}`}
+                aria-label={`${STAT_LABELS[stat].soccer} ${value}${unproven ? ', not yet proven' : ''}${rusted ? `, ${cleanValue} underneath` : ''}`}
                 whileTap={{ scale: 0.96 }}
                 onClick={() => setOpen((current) => (current === stat ? null : stat))}
                 className={clsx(
@@ -156,15 +169,25 @@ export function PlayerCard(props: PlayerCardProps) {
                 )}
               >
                 <span className="text-sm font-bold tracking-widest text-white/70">{stat}</span>
-                <span
-                  className={clsx(
-                    'text-2xl font-black',
-                    // The same signal the radar gives, in the column of numbers:
-                    // a dashed rule under anything not yet settled.
-                    unproven && 'border-b-2 border-dashed border-gold/80 leading-6',
+                <span className="flex items-baseline gap-1">
+                  <span
+                    className={clsx(
+                      'text-2xl font-black',
+                      // The same signal the radar gives, in the column of numbers:
+                      // a dashed rule under anything not yet settled.
+                      unproven && 'border-b-2 border-dashed border-gold/80 leading-6',
+                    )}
+                  >
+                    {value}
+                  </span>
+                  {/* Not a loss — a subdued extension of the same number,
+                      reading as "and this much more sitting right under it"
+                      rather than as anything taken away. */}
+                  {rusted && (
+                    <span data-testid="rust-ghost" className="text-xs font-bold text-white/35">
+                      · {cleanValue}
+                    </span>
                   )}
-                >
-                  {value}
                 </span>
               </motion.button>
             )
@@ -236,13 +259,20 @@ function StatDetail({
                 (rating === undefined || rating.attempts === 0 ? (
                   <span className="text-xs text-white/45">Not played yet</span>
                 ) : (
-                  <span
-                    className={clsx(
-                      'text-lg font-black',
-                      rating.provisional && 'border-b-2 border-dashed border-gold/80 leading-5',
+                  <span className="flex items-baseline gap-1">
+                    <span
+                      className={clsx(
+                        'text-lg font-black',
+                        rating.provisional && 'border-b-2 border-dashed border-gold/80 leading-5',
+                      )}
+                    >
+                      {Math.round(rating.rating)}
+                    </span>
+                    {Math.round(rating.ratingClean) > Math.round(rating.rating) && (
+                      <span data-testid="rust-ghost" className="text-[11px] font-bold text-white/35">
+                        · {Math.round(rating.ratingClean)}
+                      </span>
                     )}
-                  >
-                    {Math.round(rating.rating)}
                   </span>
                 ))}
             </li>

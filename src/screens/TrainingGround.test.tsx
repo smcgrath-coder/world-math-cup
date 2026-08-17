@@ -488,3 +488,53 @@ describe('TrainingGround', () => {
     })
   })
 })
+
+describe('TrainingGround — rust', () => {
+  it('says nothing extra when the selected stat has nothing rusted on it', () => {
+    history('MT.4.NF.1', true, 8, 0)
+    render(<TrainingGround seed={SEED} />)
+    enter(/dribbling/i, /mix them up/i)
+    expect(screen.queryByTestId('rust-coach-line')).toBeNull()
+  })
+
+  it('shows one Coach line, shake-the-rust-off, when the selected stat is visibly rusted', () => {
+    const FOUR_WEEKS_MS = 4 * 7 * 24 * 60 * 60 * 1000
+    // Settled well clear of the decay floor, then four weeks untouched —
+    // comfortably enough rust to round to a different number.
+    history('MT.4.NF.1', true, 8, FOUR_WEEKS_MS)
+    render(<TrainingGround seed={SEED} />)
+    enter(/dribbling/i, /mix them up/i)
+
+    const line = screen.getByTestId('rust-coach-line')
+    expect(line).toHaveTextContent(/rust/i)
+    expect(line).toHaveTextContent(/shakes right off/i)
+  })
+
+  it('never mentions a day, a week, or being away, on the rusted line or anywhere else on the screen', () => {
+    const FOUR_WEEKS_MS = 4 * 7 * 24 * 60 * 60 * 1000
+    history('MT.4.NF.1', true, 8, FOUR_WEEKS_MS)
+    render(<TrainingGround seed={SEED} />)
+    enter(/dribbling/i, /mix them up/i)
+
+    expect(screen.getByTestId('rust-coach-line')).toBeInTheDocument()
+    expect(said()).not.toMatch(/\bdays?\b|\bweeks?\b|\bmonths?\b|away|absen|since you|last (time|played)/i)
+  })
+
+  it('clears the line the moment the stat catches back up mid-session', () => {
+    const FOUR_WEEKS_MS = 4 * 7 * 24 * 60 * 60 * 1000
+    history('MT.4.NF.1', true, 8, FOUR_WEEKS_MS)
+    render(<TrainingGround seed={SEED} />)
+    enter(/dribbling/i, /mix them up/i)
+    expect(screen.getByTestId('rust-coach-line')).toBeInTheDocument()
+
+    // A generous run of correct, boosted answers should close a rust gap
+    // this small well before too many questions have gone by.
+    const oracle = oracleFor('DRI', undefined)
+    for (let i = 0; i < 60 && screen.queryByTestId('rust-coach-line'); i++) {
+      const given = answerText(oracle.item.answer)
+      submit(given)
+      oracle.record(given, true)
+    }
+    expect(screen.queryByTestId('rust-coach-line')).toBeNull()
+  })
+})

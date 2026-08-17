@@ -28,14 +28,20 @@ const card = (over: Partial<Card> = {}): Card => ({
 /**
  * A ratings map, the shape `deriveRatings` produces. Anything not named has
  * never been attempted, which is how a real card looks for weeks.
+ *
+ * `ratingClean` defaults to `rating` — no rust — unless a test names one
+ * explicitly, which is the only way rust ever enters one of these fixtures.
  */
-function ratings(named: Record<string, [rating: number, attempts: number]> = {}): Map<string, StandardRating> {
+function ratings(
+  named: Record<string, [rating: number, attempts: number, ratingClean?: number]> = {},
+): Map<string, StandardRating> {
   const out = new Map<string, StandardRating>()
   for (const id of RATED_STANDARD_IDS) {
-    const [rating, attempts] = named[id] ?? [50, 0]
+    const [rating, attempts, ratingClean] = named[id] ?? [50, 0]
     out.set(id, {
       standardId: id,
       rating,
+      ratingClean: ratingClean ?? rating,
       attempts,
       lastSeenAt: attempts > 0 ? 1_000 : null,
       provisional: attempts < 5,
@@ -226,5 +232,59 @@ describe('PlayerCard', () => {
 
     expect(container.querySelector('img[src="x"]')).toBeNull()
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
+  })
+})
+
+describe('PlayerCard — rust', () => {
+  it('shows nothing extra when no cardClean is given at all — opponents, mainly', () => {
+    render(<PlayerCard opponent={brazil} />)
+    expect(screen.queryByTestId('rust-ghost')).toBeNull()
+  })
+
+  it('shows nothing extra when nothing is actually rusted', () => {
+    render(
+      <PlayerCard country={RIONDIA} card={card()} cardClean={card()} ratings={ratings()} />,
+    )
+    expect(screen.queryByTestId('rust-ghost')).toBeNull()
+  })
+
+  it('shows the clean number as a subdued extension once a stat is visibly rusted', () => {
+    const clean = card({ DRI: 60 }) // displayed DRI is 55 — five points under
+    render(<PlayerCard country={RIONDIA} card={card()} cardClean={clean} ratings={ratings()} />)
+
+    const dri = statButton(/Dribbling 55/)
+    expect(within(dri).getByTestId('rust-ghost')).toHaveTextContent('60')
+    expect(dri.getAttribute('aria-label')).toMatch(/60 underneath/)
+    // Untouched stats stay exactly as they were.
+    expect(statButton(/Shooting 48/).getAttribute('aria-label')).not.toMatch(/underneath/)
+  })
+
+  it('says nothing when the gap is real but too small to round to a different number', () => {
+    // 55.3 clean against a displayed 55 — genuinely more underneath it, but
+    // not by enough that he could ever see the difference.
+    const clean = card({ DRI: 55.3 })
+    render(<PlayerCard country={RIONDIA} card={card()} cardClean={clean} ratings={ratings()} />)
+    expect(screen.queryByTestId('rust-ghost')).toBeNull()
+  })
+
+  it('shows the clean number beside a rusted standard in the detail view, and nothing beside a settled one', async () => {
+    const user = userEvent.setup()
+    const rusted = ratings({
+      'MT.4.NF.1': [72, 20, 72], // settled, no rust
+      'MT.4.NF.2': [58, 12, 64], // six points rusted
+    })
+    render(<PlayerCard country={RIONDIA} card={card()} ratings={rusted} />)
+
+    await user.click(statButton(/Dribbling/))
+    const rows = screen.getAllByTestId('rust-ghost')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toHaveTextContent('64')
+  })
+
+  it('never shows a clean number on an opponent’s card, which has no rust mechanic at all', async () => {
+    const user = userEvent.setup()
+    render(<PlayerCard opponent={brazil} />)
+    await user.click(statButton(/Pace/))
+    expect(screen.queryByTestId('rust-ghost')).toBeNull()
   })
 })

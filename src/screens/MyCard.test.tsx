@@ -81,8 +81,11 @@ describe('the card tab', () => {
 
     const record = screen.getByTestId('courage')
     expect(record.textContent).toMatch(/nothing on here yet/i)
+    // Widened for rust: a fallen stat must never be explained by a day, a
+    // week, an absence, or a "you haven't" — the same rule this test already
+    // held the courage record to, now covering the whole card.
     expect(document.body.textContent ?? '').not.toMatch(
-      /streak|days? in a row|you haven’t|you haven't|you should/i,
+      /streak|days? in a row|you haven’t|you haven't|you should|\bdays?\b|\bweeks?\b|\bmonths?\b|you('?re| were)? away|time away|since you|last (time|played)/i,
     )
   })
 
@@ -93,5 +96,22 @@ describe('the card tab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /training ground/i }))
     expect(onTrain).toHaveBeenCalled()
+  })
+
+  it('shows the clean number waiting under a rusted stat, in digits alone, nowhere explaining why', () => {
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+    const settledAt = Date.now() - 6 * WEEK_MS
+    getStore().appendAttempts(
+      Array.from({ length: 8 }, () => attempt({ at: settledAt, difficulty: 60, correct: true, context: 'match' })),
+    )
+    render(<MyCard />)
+
+    const ghosts = screen.getAllByTestId('rust-ghost')
+    expect(ghosts.length).toBeGreaterThan(0)
+    for (const ghost of ghosts) expect(ghost.textContent).toMatch(/^·\s*\d+$/)
+
+    expect(document.body.textContent ?? '').not.toMatch(
+      /\bdays?\b|\bweeks?\b|\bmonths?\b|you('?re| were)? away|time away|since you|last (time|played)/i,
+    )
   })
 })
