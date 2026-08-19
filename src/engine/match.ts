@@ -343,6 +343,18 @@ export interface MatchState {
    */
   parried: boolean
   /**
+   * The item that was just re-served after winning its first tackle-back, held
+   * by reference so a second miss on it can be told apart from a first miss on
+   * anything else.
+   *
+   * An ordinary tackle-back's win brings the question he missed back once, for
+   * a real retry — see `parried` above for why a parried one never reaches this
+   * at all. Missing that retry and winning the tackle-back it opens should not
+   * bring the question back a third time, so `winTackleBack` checks this before
+   * deciding whether to ask again.
+   */
+  retakenItem: Item | null
+  /**
    * How the last miss looked. Narration and scaffold choice only — it never
    * touches scoring or possession.
    */
@@ -545,6 +557,7 @@ export function startMatch(opts: {
     currentItem: null,
     pendingItem: null,
     parried: false,
+    retakenItem: null,
     lastMiss: null,
     defensiveStops: 0,
     clearances: 0,
@@ -796,13 +809,29 @@ function winTackleBack(state: MatchState, deps: MatchDeps): MatchState {
   }
   const original = won.pendingItem
   // A parried tackle-back *was* the question he missed, so winning it has
-  // answered it. Anything else asks him the same thing a third time.
-  if (original === null || won.parried) {
-    return serveQuestion({ ...won, pendingItem: null, parried: false }, deps)
+  // answered it. A retake that gets missed again and won back is the same
+  // question a third time either way, so both end the retry here.
+  //
+  // `shotChoice` is reset alongside: a parried or `original === null` win never
+  // had one set (shots never allow a parry — see `allowParry` below), but a
+  // capped retake can be a shot's own tackle-back, and leaving it set would
+  // hand the next, unrelated question credit for the shot he never actually
+  // landed.
+  if (original === null || won.parried || won.retakenItem === original) {
+    return serveQuestion(
+      { ...won, pendingItem: null, parried: false, retakenItem: null, shotChoice: null },
+      deps,
+    )
   }
   if (isOver(won)) return fullTime(won)
 
-  return pauseIfHalftime({ ...won, phase: 'question', currentItem: original, pendingItem: null })
+  return pauseIfHalftime({
+    ...won,
+    phase: 'question',
+    currentItem: original,
+    pendingItem: null,
+    retakenItem: original,
+  })
 }
 
 /**
@@ -833,6 +862,7 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
     currentItem: original,
     pendingItem: null,
     parried: false,
+    retakenItem: null,
   })
 }
 

@@ -995,7 +995,11 @@ describe('what is riding on it', () => {
     // world is still a match he expects to win.
     for (const stakes of ['friendly', 'group'] as Stakes[]) {
       const r = simulate(BRAZIL, stakes, 200)
-      expect(r.winRate).toBeGreaterThan(0.85)
+      // 0.8, not the tighter 0.85 this used to hold to: capping a tackle-back
+      // retry at one (see `retakenItem` in match.ts) trades away some of the
+      // eventual conversions a third or fourth attempt used to pick up. Still
+      // comfortably "he expects to win."
+      expect(r.winRate).toBeGreaterThan(0.8)
       expect(r.theyScoredRate).toBeLessThan(0.25)
     }
   })
@@ -1406,22 +1410,32 @@ describe('the log', () => {
     }
   })
 
-  it('tags a shot once however many times it is taken back and retaken', () => {
+  it('tags a shot once even when its tackle-back is taken and retaken', () => {
     const deps = makeDeps(4)
     const atShot = advanceTo(start(deps), deps, (s) => s.phase === 'shot_choice')
     let s = reduce(atShot, { type: 'chooseShot', shot: 'bicycle' }, deps)
+    const shot = s.currentItem!
 
-    // Miss the shot, win it back, miss it again, win it back again.
-    for (let i = 0; i < 2; i++) {
-      s = answer(s, wildMiss(s.currentItem!), deps)
-      expect(s.phase).toBe('tackleback')
-      s = answer(s, right(s.currentItem!), deps)
-      expect(s.phase).toBe('question')
-      expect(s.shotChoice).toBe('bicycle')
-    }
+    // Miss it, win the ball back, and the same shot comes back for a real retry.
+    s = answer(s, wildMiss(s.currentItem!), deps)
+    expect(s.phase).toBe('tackleback')
     s = answer(s, right(s.currentItem!), deps)
+    expect(s.phase).toBe('question')
+    expect(s.currentItem).toBe(shot)
+    expect(s.shotChoice).toBe('bicycle')
 
-    expect(s.score).toEqual([1, 0])
+    // Miss the retake too. Winning this second tackle-back moves on rather than
+    // asking the same shot a third time -- and because the shot was never
+    // actually landed, the next, unrelated question must not inherit its
+    // colours, or it would score as a goal it did not score.
+    s = answer(s, wildMiss(s.currentItem!), deps)
+    expect(s.phase).toBe('tackleback')
+    s = answer(s, right(s.currentItem!), deps)
+    expect(s.phase).toBe('question')
+    expect(s.currentItem).not.toBe(shot)
+    expect(s.shotChoice).toBeNull()
+    expect(s.score).toEqual([0, 0])
+
     expect(s.courage.hardShotsAttempted).toBe(1)
     expect(deriveCourage(s.log as Attempt[]).hardShotsAttempted).toBe(1)
     expect(s.log.filter((a) => a.shot !== undefined)).toHaveLength(1)
@@ -1637,6 +1651,45 @@ describe('the tackle-back scaffold', () => {
     // Win it. The same question must not come back.
     s = answer(s, options[correct]!, deps)
     expect(s.parried).toBe(false)
+    if (s.phase === 'question') expect(s.currentItem!.prompt).not.toBe(item.prompt)
+  })
+
+  it('does not ask an ordinary tackle-back question a third time either', () => {
+    /*
+     * The parry above is one way a tackle-back's win can be the answer. This is
+     * the other: an ordinary scaffold's win genuinely does bring the missed
+     * question back, once, for a real retry (`retakenItem` in match.ts marks
+     * it). Missing that retry too and winning the tackle-back it opens must not
+     * bring it back a second time on top of that — three askings of the same
+     * question is not a retry any more, it is being stuck on it.
+     */
+    // Two options, so this never gets parried (`withoutTheOptionHePicked` needs
+    // three or more to leave a real choice standing) — every miss on it takes
+    // the ordinary scaffold route.
+    const item = aChoiceWith(2)
+    const options = item.answer.kind === 'choice' ? item.answer.options : []
+    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
+    const wrong = options.find((_, i) => i !== correct)!
+
+    const deps = makeDeps(5)
+    let s = start(deps)
+    s = { ...s, phase: 'question', currentItem: item, possession: 'us', zone: 'midfield' }
+
+    s = answer(s, wrong, deps)
+    expect(s.phase, 'a miss should open a tackle-back').toBe('tackleback')
+    expect(s.parried, 'a two-option miss is never parried').toBe(false)
+
+    // Win it. The question comes back once, for a real retry.
+    s = answer(s, right(s.currentItem!), deps)
+    expect(s.phase).toBe('question')
+    expect(s.currentItem!.prompt).toBe(item.prompt)
+
+    // Miss the retake too, and win the tackle-back it opens.
+    s = answer(s, wrong, deps)
+    expect(s.phase, 'missing the retake should open another tackle-back').toBe('tackleback')
+    s = answer(s, right(s.currentItem!), deps)
+
+    // Moves on instead of asking the same question a third time.
     if (s.phase === 'question') expect(s.currentItem!.prompt).not.toBe(item.prompt)
   })
 
