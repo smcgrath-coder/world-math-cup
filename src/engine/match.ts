@@ -981,26 +981,43 @@ function enterShotChoice(state: MatchState): MatchState {
  * is for deciding to try the hard thing. Whether it comes off is not the point
  * and must never become the point.
  *
+ * That reward still has one guard on it, resolved in this same synchronous
+ * call rather than after anything he can see: `outside18` and `bicycle` each
+ * target a success rate below `MIN_MATCH_TARGET` on purpose, so the item
+ * drawn is normally harder than his own rating on whatever standard comes up.
+ * Against a weak enough opponent, `MAX_OPPONENT_BIAS` can push that target back
+ * up far enough that the item lands *below* his rating — a "hard" shot that
+ * was not actually hard, only labelled that way. Courage does not pay out on
+ * a label; `hardShotsAttempted` only moves when the item drawn is genuinely at
+ * or above his rating on its own standard. This never touches whether the
+ * choice reads as brave on screen or whether it counts toward the shot-menu
+ * copy — both still fire unconditionally, and a mismatch between what the
+ * screen says and what the ledger paid out is a narrow, known gap rather than
+ * a claim this pass makes false.
+ *
  * Choosing does not consume a question — the answer that follows does.
  */
 function onChooseShot(state: MatchState, shot: ShotChoice, deps: MatchDeps): MatchState {
   const hard = shot === 'outside18' || shot === 'bicycle'
+  const currentItem = selectItem({
+    ratings: biasedRatings(shot, state.opponent, deps),
+    pressure: shot,
+    rng: deps.rng,
+    probeWeakest: deps.probeWeakest,
+    recentStandardIds: recentStandards(state),
+  })
+  const clearsFloor = currentItem.difficulty >= ratingFor(deps.ratings, currentItem.standardId)
 
   return {
     ...state,
     phase: 'question',
     shotChoice: shot,
     pendingItem: null,
-    currentItem: selectItem({
-      ratings: biasedRatings(shot, state.opponent, deps),
-      pressure: shot,
-      rng: deps.rng,
-      probeWeakest: deps.probeWeakest,
-      recentStandardIds: recentStandards(state),
-    }),
-    courage: hard
-      ? { ...state.courage, hardShotsAttempted: state.courage.hardShotsAttempted + 1 }
-      : state.courage,
+    currentItem,
+    courage:
+      hard && clearsFloor
+        ? { ...state.courage, hardShotsAttempted: state.courage.hardShotsAttempted + 1 }
+        : state.courage,
   }
 }
 

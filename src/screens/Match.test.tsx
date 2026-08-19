@@ -7,6 +7,7 @@ import {
   beatFor,
   matchDeps,
   scoutReport,
+  sfxFor,
 } from './Match'
 import type { MatchResult } from './Match'
 import { OPPONENTS_BY_ID } from '../data/opponents'
@@ -244,6 +245,40 @@ describe('Match', () => {
     expect(said()).not.toMatch(/\bwrong\b|\bfail(ed|ure)?\b|\bmiss(ed)?\b|\bunlucky\b/i)
     expect(said()).not.toMatch(/should have|shouldn’t have|too hard for/i)
     expect(classNames().filter((c) => /red|rose|crimson/i.test(c))).toEqual([])
+  })
+
+  it('shows the celebration on a real goal', () => {
+    const o = play()
+    reachFinalThird(o)
+    chooseShot(o, /inside the box/i, 'box')
+    settle()
+    answerRight(o)
+
+    expect(screen.getByTestId('beat')).toHaveAttribute('data-tone', 'goal')
+    expect(screen.getByTestId('character-rion-celebration')).toBeInTheDocument()
+  })
+
+  it('never shows the celebration on a brave miss beside it, however close it got', () => {
+    // `docs/art/placement.md` is binding: the file belongs on an unambiguous
+    // win and nowhere near a loss, and a missed hard shot — however much
+    // courage it paid — is still a shot that did not go in.
+    const o = play()
+    reachFinalThird(o)
+    chooseShot(o, /bicycle kick/i, 'bicycle')
+    settle()
+    answerWrong(o)
+
+    expect(screen.getByTestId('beat')).toHaveAttribute('data-tone', 'brave')
+    expect(screen.queryByTestId('character-rion-celebration')).toBeNull()
+  })
+
+  it('never shows the celebration on an ordinary beat, like choosing a hard shot', () => {
+    const o = play()
+    reachFinalThird(o)
+    chooseShot(o, /bicycle kick/i, 'bicycle')
+
+    expect(screen.getByTestId('beat')).toHaveAttribute('data-tone', 'brave')
+    expect(screen.queryByTestId('character-rion-celebration')).toBeNull()
   })
 
   it('shows the tackle-back with a visible bar when the ball comes loose', () => {
@@ -610,6 +645,125 @@ describe('beatFor', () => {
     const beat = beatFor(before, scored)
     expect(beat?.tone).toBe('goal')
     expect(beat?.line).toMatch(/overhead kick/i)
+  })
+})
+
+describe('sfxFor', () => {
+  it('says nothing when nothing happened', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    expect(sfxFor(o.state, o.state)).toBeNull()
+  })
+
+  it('is a goal when the last one goes in, taking priority over everything else', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, shotChoice: 'bicycle' }
+    const scored: MatchState = { ...o.state, phase: 'fulltime', score: [1, 0], shotChoice: null }
+    expect(sfxFor(before, scored)).toBe('goal')
+  })
+
+  it('is the crowd when a hard shot misses, whatever the miss looked like', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'question', shotChoice: 'bicycle' }
+    const after: MatchState = {
+      ...before,
+      lastMiss: { kind: 'off' },
+      log: [
+        {
+          id: 'a1',
+          at: 1,
+          standardId: 'FLU.MULT',
+          difficulty: 30,
+          params: {},
+          given: '37',
+          correct: false,
+          latencyMs: 900,
+          context: 'match',
+          shot: 'bicycle',
+        },
+      ],
+    }
+    expect(sfxFor(before, after)).toBe('crowd')
+  })
+
+  it('is a save on an ordinary near miss, word for word what the film room already calls it', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'question', shotChoice: 'wide' }
+    const after: MatchState = {
+      ...before,
+      lastMiss: { kind: 'near' },
+      log: [
+        {
+          id: 'a1',
+          at: 1,
+          standardId: 'FLU.MULT',
+          difficulty: 30,
+          params: {},
+          given: '38',
+          correct: false,
+          latencyMs: 900,
+          context: 'match',
+        },
+      ],
+    }
+    expect(sfxFor(before, after)).toBe('save')
+  })
+
+  it('says nothing for a miss that was not close', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'question', shotChoice: 'wide' }
+    const after: MatchState = {
+      ...before,
+      lastMiss: { kind: 'off' },
+      log: [
+        {
+          id: 'a1',
+          at: 1,
+          standardId: 'FLU.MULT',
+          difficulty: 30,
+          params: {},
+          given: '1000000',
+          correct: false,
+          latencyMs: 900,
+          context: 'match',
+        },
+      ],
+    }
+    expect(sfxFor(before, after)).toBeNull()
+  })
+
+  it('is the whistle at half time', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'halftime' }
+    const after: MatchState = { ...o.state, phase: 'question' }
+    expect(sfxFor(before, after)).toBe('whistle')
+  })
+
+  it('is the whistle at full time', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'question' }
+    const after: MatchState = { ...o.state, phase: 'fulltime' }
+    expect(sfxFor(before, after)).toBe('whistle')
+  })
+
+  it('is the crowd the moment a hard shot is chosen, before anything is known about it', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'shot_choice', shotChoice: null }
+    const after: MatchState = { ...o.state, phase: 'question', shotChoice: 'outside18' }
+    expect(sfxFor(before, after)).toBe('crowd')
+  })
+
+  it('says nothing for an ordinary shot choice', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, phase: 'shot_choice', shotChoice: null }
+    const after: MatchState = { ...o.state, phase: 'question', shotChoice: 'wide' }
+    expect(sfxFor(before, after)).toBeNull()
+  })
+
+  it('says nothing for an ordinary continuity beat, like a clearance', () => {
+    const o = open(CURACAO, 'friendly', 'm1')
+    const before: MatchState = { ...o.state, possession: 'them', zone: 'own_third' }
+    const after: MatchState = { ...before, possession: 'us' }
+    expect(sfxFor(before, after)).toBeNull()
   })
 })
 

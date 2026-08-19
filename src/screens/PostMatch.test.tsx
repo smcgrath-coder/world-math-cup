@@ -5,6 +5,7 @@ import { OPPONENTS_BY_ID } from '../data/opponents'
 import { getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft } from '../store/storage'
 import type { Attempt } from '../store/types'
+import type { CampaignOutcome } from '../engine/campaign'
 
 const BRAZIL = OPPONENTS_BY_ID.brazil!
 const CURACAO = OPPONENTS_BY_ID.curacao!
@@ -339,6 +340,55 @@ describe('campaign news', () => {
     )
     expect(said()).not.toMatch(/\bwrong\b/i)
     expect(said()).not.toMatch(/\byou lost\b|\byou failed\b|\byou're out\b/i)
+  })
+
+  it('shows the celebration for lifting the cup, and nowhere else in the campaign card', () => {
+    clock = NOW - 60 * MINUTE
+    save([draft({ matchId: 'm1' }), draft({ matchId: 'm1', correct: false, given: '-1' })])
+
+    render(
+      <PostMatch
+        matchId="m1"
+        opponent={CURACAO}
+        score={[3, 0]}
+        campaignOutcome={{ kind: 'champion' }}
+      />,
+    )
+
+    expect(screen.getByTestId('character-rion-celebration')).toBeInTheDocument()
+  })
+
+  it('never shows the celebration on an outcome short of the cup itself, however far the run got', () => {
+    // `docs/art/placement.md` is binding: an unambiguous win only, and a
+    // knockout round survived still has a next match riding on it.
+    const outcomes: CampaignOutcome[] = [
+      { kind: 'qualifying-continues', wins: 1, losses: 0, remaining: 2 },
+      { kind: 'qualified' },
+      { kind: 'qualifying-failed' },
+      { kind: 'group-continues' },
+      { kind: 'advanced-to-knockout' },
+      { kind: 'eliminated-in-group' },
+      { kind: 'advanced', round: 'sf', nextRound: 'final' },
+      { kind: 'eliminated-in-knockout', round: 'final' },
+    ]
+
+    for (const campaignOutcome of outcomes) {
+      clock = NOW - 60 * MINUTE
+      save([draft({ matchId: `m-${campaignOutcome.kind}` })])
+      const { unmount } = render(
+        <PostMatch
+          matchId={`m-${campaignOutcome.kind}`}
+          opponent={CURACAO}
+          score={[1, 0]}
+          campaignOutcome={campaignOutcome}
+        />,
+      )
+      expect(
+        screen.queryByTestId('character-rion-celebration'),
+        campaignOutcome.kind,
+      ).toBeNull()
+      unmount()
+    }
   })
 })
 

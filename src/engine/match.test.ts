@@ -420,6 +420,58 @@ describe('the shot choice', () => {
     expect(goal.phase).toBe('question')
     expect(last(goal.log).shot).toBe('box')
   })
+
+  describe('the courage floor', () => {
+    /**
+     * `outside18` targets a success rate of 0.5 — already below
+     * `MIN_MATCH_TARGET`, which is what makes it hard in the first place. A
+     * weak enough opponent's favourable bias (`MAX_OPPONENT_BIAS`) pushes that
+     * target back up past 0.5, which pushes the item's difficulty *below* his
+     * own rating: a shot labelled hard that, this time, genuinely was not.
+     * Rating 90 against Curaçao is the same pairing an existing test already
+     * confirms lands the bias at its cap.
+     */
+    it('does not pay courage when the weakest opponent blunts outside18 below his own rating', () => {
+      const deps = makeDeps(7, 90)
+      const s = advanceTo(start(deps, 'match-1', CURACAO), deps, (state) => state.phase === 'shot_choice')
+      const chosen = reduce(s, { type: 'chooseShot', shot: 'outside18' }, deps)
+
+      // The fixture actually reaches the edge case it claims to, or this test
+      // proves nothing either way.
+      expect(chosen.currentItem!.difficulty).toBeLessThan(90)
+
+      expect(chosen.courage.hardShotsAttempted).toBe(0)
+      // Everything else about choosing it still happens exactly as normal —
+      // only the courage ledger is guarded, nothing about the choice itself.
+      expect(chosen.shotChoice).toBe('outside18')
+      expect(chosen.phase).toBe('question')
+    })
+
+    it('still pays courage for bicycle against the same weak opponent, since its own floor sits further from rating', () => {
+      const deps = makeDeps(7, 90)
+      const s = advanceTo(start(deps, 'match-1', CURACAO), deps, (state) => state.phase === 'shot_choice')
+      const chosen = reduce(s, { type: 'chooseShot', shot: 'bicycle' }, deps)
+
+      expect(chosen.currentItem!.difficulty).toBeGreaterThanOrEqual(90)
+      expect(chosen.courage.hardShotsAttempted).toBe(1)
+    })
+
+    it('pays courage normally for outside18 against a fair opponent', () => {
+      const deps = makeDeps(7, 50)
+      const s = advanceTo(start(deps, 'match-1', BRAZIL), deps, (state) => state.phase === 'shot_choice')
+      const chosen = reduce(s, { type: 'chooseShot', shot: 'outside18' }, deps)
+
+      expect(chosen.courage.hardShotsAttempted).toBe(1)
+    })
+
+    it('never blocks the safe shots either way — they were never counting on the floor', () => {
+      const deps = makeDeps(7, 90)
+      const s = advanceTo(start(deps, 'match-1', CURACAO), deps, (state) => state.phase === 'shot_choice')
+
+      expect(reduce(s, { type: 'chooseShot', shot: 'wide' }, deps).courage.hardShotsAttempted).toBe(0)
+      expect(reduce(s, { type: 'chooseShot', shot: 'box' }, deps).courage.hardShotsAttempted).toBe(0)
+    })
+  })
 })
 
 describe('a miss loosens the ball', () => {

@@ -41,6 +41,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { FilmRoom } from './FilmRoom'
+import { Character } from '../components/Character'
 import { LABELS_BY_STANDARD, STAT_LABELS, clampStat } from '../components/stats'
 import {
   CARD_STATS,
@@ -652,6 +653,13 @@ function CampaignNewsCard({ outcome }: { outcome: CampaignOutcome }) {
 
   return (
     <section data-testid="campaign-news" className="rounded-2xl bg-gold/12 p-4 ring-1 ring-gold/30">
+      {/* The final's own unambiguous win, not every knockout round survived —
+          `docs/art/placement.md` reserves this file for a win nothing else
+          could put a shadow over, and "advanced to the semi-final" still has
+          a next match riding on it in a way lifting the cup does not. */}
+      {outcome.kind === 'champion' && (
+        <Character name="rion-celebration" className="mx-auto mb-2 block h-28 w-auto" />
+      )}
       <p className="text-[11px] font-bold tracking-[0.15em] text-gold/80 uppercase">World Cup</p>
       <p className="mt-1.5 text-base font-black text-gold">{heading}</p>
       <p className="mt-1 text-[15px] leading-relaxed text-white/85">{body}</p>

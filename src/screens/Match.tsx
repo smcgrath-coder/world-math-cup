@@ -42,6 +42,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
 import { Pitch } from '../components/Pitch'
+import { Character } from '../components/Character'
 import { AnswerInput } from '../components/AnswerInput'
 import { ShotMenu } from '../components/ShotMenu'
 import { TackleBack } from '../components/TackleBack'
@@ -58,6 +59,8 @@ import { useCountry, useSettings } from '../store/useGameState'
 import type { Opponent } from '../data/opponents'
 import type { CardStat } from '../curriculum/standards.generated'
 import { answerText } from '../engine/answer'
+import { playSfx } from '../audio/sfx'
+import type { SfxName } from '../audio/sfx'
 
 /**
  * How long an ordinary beat between questions runs.
@@ -217,6 +220,40 @@ export function beatFor(before: MatchState, after: MatchState): Omit<Beat, 'item
 
   // An unreadable answer lands here: nothing moved, nothing was logged, and
   // there is nothing to say about it beyond the re-prompt.
+  return null
+}
+
+/**
+ * Which sound this transition earns, if any — a separate question from
+ * `beatFor`'s, and not every beat has an answer to it. Ordinary continuity
+ * beats ("Cleared. Ball's yours.", a tackle-back won) stay silent; only the
+ * four named effects have a moment they are for.
+ *
+ * Pure and exported for the same reason `beatFor` is: read in a test rather
+ * than clicked through and listened to.
+ */
+export function sfxFor(before: MatchState, after: MatchState): SfxName | null {
+  // Goals first, matching `beatFor`'s own priority — a goal on the fourteenth
+  // question is still a goal before it is a whistle.
+  if (after.score[0] > before.score[0]) return 'goal'
+
+  const missed = after.log.length > before.log.length && after.log.at(-1)?.correct === false
+  // A hard shot's crowd reaction, whether it went in or not — the courage
+  // track pays the same either way, and so does the sound of it.
+  if (before.phase === 'question' && isHard(before.shotChoice) && missed) return 'crowd'
+  // Everything else that misses but was still on target is a save, word for
+  // word what this file's own header already calls it.
+  if (missed && after.lastMiss?.kind === 'near') return 'save'
+
+  if (after.phase === 'fulltime' && before.phase !== 'fulltime') return 'whistle'
+  if (before.phase === 'halftime') return 'whistle'
+
+  // The anticipation of choosing to go for it, not the outcome — the same
+  // moment `beatFor`'s own `SHOT_CALL` fires for.
+  if (before.phase === 'shot_choice' && after.shotChoice !== null && isHard(after.shotChoice)) {
+    return 'crowd'
+  }
+
   return null
 }
 
@@ -434,6 +471,9 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
       askedItems.current.push(before.currentItem)
     }
 
+    const sfx = sfxFor(before, after)
+    if (sfx !== null) playSfx(sfx)
+
     const next = beatFor(before, after)
     if (next !== null) {
       // The beat holds the question that was *being asked*, so it can dim in
@@ -643,22 +683,31 @@ function BeatCard({ beat }: { beat: Beat }) {
   const loud = beat.tone === 'goal' || beat.tone === 'brave'
 
   return (
-    <motion.p
-      data-testid="beat"
-      data-tone={beat.tone}
-      role="status"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className={clsx(
-        'mb-4 rounded-2xl px-4 py-3.5 text-center leading-snug text-balance',
-        loud
-          ? 'bg-gold/15 text-xl font-black text-gold ring-1 ring-gold/30'
-          : 'text-base font-bold text-white/75',
+    <>
+      {/* The one unambiguous-win moment inside a match itself. Never on a
+          brave miss sitting right beside it in this same tone group —
+          `docs/art/placement.md` is binding, and a picture on a miss,
+          however brave, is not what "never near a loss" means. */}
+      {beat.tone === 'goal' && (
+        <Character name="rion-celebration" className="mx-auto mb-2 block h-28 w-auto" />
       )}
-    >
-      {beat.line}
-    </motion.p>
+      <motion.p
+        data-testid="beat"
+        data-tone={beat.tone}
+        role="status"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+        className={clsx(
+          'mb-4 rounded-2xl px-4 py-3.5 text-center leading-snug text-balance',
+          loud
+            ? 'bg-gold/15 text-xl font-black text-gold ring-1 ring-gold/30'
+            : 'text-base font-bold text-white/75',
+        )}
+      >
+        {beat.line}
+      </motion.p>
+    </>
   )
 }
 

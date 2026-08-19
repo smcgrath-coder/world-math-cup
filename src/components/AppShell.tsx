@@ -13,6 +13,7 @@ import { useAttempts, useCampaign, useCountry, useSettings } from '../store/useG
 import { getStore } from '../store/storage'
 import { useMusicTrack } from '../audio/useMusicTrack'
 import type { TrackName } from '../audio/music'
+import { useSfxEnabled } from '../audio/useSfxEnabled'
 import { useOpportunisticSync } from '../sync/useOpportunisticSync'
 import type { Opponent } from '../data/opponents'
 import type { Stakes } from '../engine/match'
@@ -151,6 +152,7 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
   )
 
   useMusicTrack(trackFor({ country: country !== null, explained, scouted, result, fixture, tab }))
+  useSfxEnabled()
 
   if (!country) return <CountryCreator />
   if (!explained) return <CoachExplainer onDone={() => setExplained(true)} />
