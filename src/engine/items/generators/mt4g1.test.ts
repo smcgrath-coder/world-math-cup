@@ -373,6 +373,15 @@ describe('MT.4.G.1 identifying angles and parallel sides in figures', () => {
     expect(countAcuteAngles(triangle)).toBe(2)
   })
 
+  it('has more than two answers in its easiest band', () => {
+    // Rectangles and squares alone answer 4 (right angles) or 2 (parallel
+    // pairs) whatever lengths are quoted. The band was learnable by heart in
+    // three questions, so the right triangle sits in it too and brings 1 and 0.
+    const answers = new Set(itemsAt(EASIEST, 200).map((i) => canonicalOf(i.answer)))
+    expect(answers.size).toBeGreaterThanOrEqual(4)
+    expect(answers.has('0')).toBe(true)
+  })
+
   it('gets harder by widening the figures it draws, not by changing the question', () => {
     const shapesAt = (d: number) => new Set(itemsAt(d).map((i) => SHAPES[i.params.shape!]!.id))
     expect(shapesAt(EASIEST).has('rectangle')).toBe(true)

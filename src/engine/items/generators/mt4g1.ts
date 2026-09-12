@@ -545,9 +545,16 @@ function shapeIndex(id: string): number {
  * appear once there is a shape with a corner that is not square, because "how
  * many acute angles does a rectangle have?" is a fine question and a strange
  * one to open with.
+ *
+ * The right triangle is in the bottom band as well as the second. With only
+ * rectangles and squares there, every item answered 4 or 2 whatever lengths
+ * it quoted — a child learned the band in three questions and the standard
+ * not at all. A right triangle answers 1 and 0 to the same two questions,
+ * which is the first time "none" is an answer, and its corner is one he
+ * already knows the name of.
  */
 const BANDS: readonly { shapes: readonly string[]; asks: readonly number[] }[] = [
-  { shapes: ['rectangle', 'square'], asks: [RIGHT, PARALLEL] },
+  { shapes: ['rectangle', 'square', 'right-triangle'], asks: [RIGHT, PARALLEL] },
   { shapes: ['rectangle', 'square', 'right-triangle'], asks: [RIGHT, PARALLEL, ACUTE, IDENTIFY] },
   {
     shapes: ['right-triangle', 'obtuse-triangle', 'parallelogram', 'right-trapezoid'],
