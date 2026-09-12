@@ -161,10 +161,15 @@ recess and caused meltdowns.
   because the ball is already loose — running out cannot take anything he still
   holds. A switch in settings removes it entirely.
 - **A miss never ends a possession.** It loosens the ball, and the tackle-back
-  is a scaffolded sub-question, so the second chance does the teaching. On a
-  question with three or more options it is instead the *same* question with the
-  option he picked taken off it — the keeper parried it — because a rung down is
-  no help to a child who has not ruled anything out yet.
+  is a scaffolded sub-question, so the second chance does the teaching. After a
+  conceptual miss that sub-question is the easiest fact from *inside* the one
+  he missed — `347 × 6` comes apart at `4 × 6`, `97 ÷ 4` at `4 × 2`, an area at
+  the multiplication it is (`engine/items/decompose.ts`). Before that landed
+  the tackle-back was a random draw from the standard underneath, aimed so low
+  that nine multiplication tackle-backs in ten were `7 × 0`. On a question with
+  three or more options it is instead the *same* question with the option he
+  picked taken off it — the keeper parried it — because a rung down is no help
+  to a child who has not ruled anything out yet.
 - **Choosing the hard shot counts before anyone knows if it went in.** A missed
   bicycle kick is celebrated. That is the mechanism for manufacturing "I proved
   I could", on purpose and repeatedly.

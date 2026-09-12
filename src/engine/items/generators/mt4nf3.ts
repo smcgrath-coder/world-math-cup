@@ -317,8 +317,42 @@ export const mt4nf3: ItemGenerator = {
   },
 }
 
-function draftFor(format: number, terms: Terms, op: number, rng: Rng): Draft {
-  switch (format) {
+/**
+ * A named bare sum as an item, for a tackle-back decomposed from the question
+ * he missed: `3/4 × 3` becomes `3/4 + 3/4`, because a fraction times a whole
+ * number is repeated addition of that fraction, and two of the lots is the
+ * first rung of it.
+ *
+ * Pitched at the lowest band whose denominators include this one and whose
+ * rules the sum obeys, so the rating on this standard moves by what he
+ * actually added. `null` for a denominator no band asks about — a piece name
+ * this file cannot say is a step it cannot explain.
+ */
+export function sumItem(n1: number, n2: number, den: number): Item | null {
+  if (![n1, n2, den].every((n) => Number.isInteger(n) && n >= 1)) return null
+  if (n1 >= den || n2 >= den) return null
+  const crosses = n1 + n2 > den
+  const index = BANDS.findIndex((band) => band.dens.includes(den) && (band.sumMayCross || !crosses))
+  if (index === -1) return null
+
+  const [lo, hi] = RANGE
+  const width = (hi - lo + 1) / BANDS.length
+  const difficulty = Math.round(lo + width * index + width / 2)
+
+  const terms: Terms = { n1, n2, den }
+  const draft = bare(terms, ADD)
+  return {
+    standardId: 'MT.4.NF.3',
+    difficulty,
+    prompt: draft.prompt,
+    answer: { kind: 'rational', canonical: draft.answer },
+    params: { ...terms, op: ADD, format: BARE },
+    workedSteps: draft.workedSteps,
+    misconceptions: draft.misconceptions,
+  }
+}
+
+function draftFor(format: number, terms: Terms, op: number, rng: Rng): Draft {  switch (format) {
     case MISSING_SECOND:
       return missingSecond(terms, op)
     case MISSING_FIRST:

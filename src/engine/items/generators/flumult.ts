@@ -90,6 +90,16 @@ function hardness(a: number, b: number): number {
 }
 
 /**
+ * The same scale, for callers choosing between facts: 0 for `2 × 5`, 4 for
+ * `7 × 8`, and below 0 for a rule fact so those always sort first and can be
+ * recognised. `decompose` uses it to take the *easiest* fact out of a missed
+ * question, because a scaffold is a rung and not a second test.
+ */
+export function factHardness(a: number, b: number): number {
+  return isRuleFact(a, b) ? -1 : hardness(a, b)
+}
+
+/**
  * The four difficulty bands, easiest first, as the range of fact hardness each
  * one draws from, and whether the rule facts may appear in it at all.
  *
@@ -116,6 +126,7 @@ const BANDS: readonly { min: number; max: number; rules: boolean }[] = [
  * and named now and then.
  */
 const RULE_SHARE = 8
+
 interface Fact {
   a: number
   b: number
@@ -166,6 +177,7 @@ function poolFor(index: number): Fact[] {
 
 /** The times-0 and times-1 rows, both orders, without `0 × 0`. */
 const RULE_POOL: readonly Fact[] = allFacts().filter(({ a, b }) => isRuleFact(a, b))
+
 function bandIndexFor(difficulty: number): number {
   const [lo, hi] = RANGE
   const share = (difficulty - lo) / (hi - lo + 1)
@@ -255,6 +267,7 @@ function buildFact(a: number, b: number, difficulty: number): Item {
     misconceptions: misconceptionsFor(a, b, product),
   }
 }
+
 /**
  * How many groups are worth writing out as an addition.
  *

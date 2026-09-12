@@ -4,6 +4,7 @@ import { RATED_STANDARD_IDS, deriveCourage } from '../store/derive'
 import { validateAttempt } from '../store/storage'
 import type { AttemptDraft } from '../store/storage'
 import type { Attempt, ShotChoice, StandardRating } from '../store/types'
+import { DECOMPOSES_TO } from './items/decompose'
 import { generatorFor } from './items/generators'
 import { makeRng } from './items/rng'
 import type { Item, Rng } from './items/types'
@@ -908,7 +909,15 @@ describe('what is riding on it', () => {
     // probability: 0.593 win, 0.330 draw, 0.077 loss, 1.44-0.73, and Brazil
     // score in 57% of them. Before knockouts existed the same player won 88%
     // and Brazil scored in 16%.
-    expect(r.winRate).toBeGreaterThanOrEqual(0.55)
+    //
+    // Re-measured at 0.543 once the tackle-back became a real question. It
+    // used to be a random draw labelled for 95% success — in practice `7 × 0`
+    // — so this player won nearly every ball back. It is now the easiest fact
+    // from inside the question he missed, carrying that fact's own difficulty,
+    // which a rating-50 player answers about three times in four. Brazil is
+    // meant to be hard, and a knockout he wins just over half the time against
+    // the best side in the game is what the design asked for.
+    expect(r.winRate).toBeGreaterThanOrEqual(0.5)
     expect(r.winRate).toBeLessThanOrEqual(0.65)
     // They score in a majority of matches, so the threat is real rather than
     // theoretical.
@@ -1528,9 +1537,53 @@ describe('the tackle-back scaffold', () => {
 
   it('goes back to the concept after an off-target miss', () => {
     for (const [standardId, prerequisite] of Object.entries(PREREQUISITE)) {
-      const item = anItem(standardId)
-      const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'off', relativeError: 40 }, makeDeps())
-      expect(scaffold.standardId).toBe(prerequisite)
+      for (let seed = 0; seed < 20; seed++) {
+        const item = generatorFor(standardId)!.generate(60, makeRng(seed))
+        const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'off', relativeError: 40 }, makeDeps())
+        // Either the fact inside the question, on whichever standard that fact
+        // belongs to, or a draw from the standard underneath.
+        const allowed = [prerequisite, ...(DECOMPOSES_TO[standardId] ?? [])]
+        expect(allowed, `${item.prompt} -> ${scaffold.prompt}`).toContain(scaffold.standardId)
+        expect(scaffold.standardId).not.toBe(standardId)
+      }
+    }
+  })
+
+  it('asks the fact from inside the question he missed, when there is one', () => {
+    // `347 × 6` comes apart at `3 × 6` or `4 × 6` — not at a random fact, and
+    // never at `7 × 0`. Driven through `chooseScaffold` so the wiring is what
+    // is tested; `decompose.test.ts` owns the arithmetic.
+    const item: Item = {
+      standardId: 'MT.4.NBT.5',
+      difficulty: 50,
+      prompt: '347 × 6',
+      answer: { kind: 'rational', canonical: '2082' },
+      params: { a: 347, b: 6, format: 0 },
+      workedSteps: ['x'],
+      misconceptions: [],
+    }
+    for (const kind of ['off', 'misconception'] as const) {
+      const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind }, makeDeps())
+      expect(scaffold.standardId).toBe('FLU.MULT')
+      expect([3, 4]).toContain(scaffold.params.a)
+      expect(scaffold.params.b).toBe(6)
+    }
+    // A near miss is an arithmetic slip, and stays on the standard he slipped on.
+    expect(chooseScaffold(item, NOT_AN_OPTION, { kind: 'near' }, makeDeps()).standardId).toBe('MT.4.NBT.5')
+  })
+
+  it('never serves a times-0 or times-1 fact as a tackle-back', () => {
+    // The row that used to be nine multiplication tackle-backs in ten. Both
+    // routes are covered: the fact inside the question, and the drawn fallback
+    // for a question with nothing inside it.
+    for (const standardId of ['MT.4.NBT.5', 'MT.4.NBT.6', 'MT.4.OA.1', 'MT.4.OA.4', 'MT.4.MD.1']) {
+      for (let seed = 0; seed < 60; seed++) {
+        const item = generatorFor(standardId)!.generate(20, makeRng(seed))
+        const scaffold = chooseScaffold(item, NOT_AN_OPTION, { kind: 'off' }, makeDeps(seed, 30))
+        if (scaffold.standardId !== 'FLU.MULT') continue
+        const { a, b } = scaffold.params
+        expect(a! >= 2 && b! >= 2, `${item.prompt} -> ${scaffold.prompt}`).toBe(true)
+      }
     }
   })
 
@@ -1755,9 +1808,10 @@ describe('the tackle-back scaffold', () => {
     const item = s.currentItem!
     const missed = answer(s, wildMiss(item), runDeps)
 
-    expect(missed.currentItem!.standardId).toBe(
+    expect([
       PREREQUISITE[item.standardId] ?? item.standardId,
-    )
+      ...(DECOMPOSES_TO[item.standardId] ?? []),
+    ]).toContain(missed.currentItem!.standardId)
     const logged = answer(missed, right(missed.currentItem!), runDeps)
     expect(logged.log[1]).toMatchObject({
       context: 'tackleback',

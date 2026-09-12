@@ -168,6 +168,7 @@ describe('FLU.MULT multiplication facts', () => {
     expect(() => factItem(3, -1)).toThrow()
     expect(() => factItem(2.5, 3)).toThrow()
   })
+
   it('drills the facts that are actually hard at the top of the range', () => {
     const facts = new Set(itemsAt(HARDEST, 300).map((i) => `${i.params.a}x${i.params.b}`))
     for (const fact of ['7x8', '8x7', '7x7', '8x8', '6x7', '9x8']) {

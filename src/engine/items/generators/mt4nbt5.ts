@@ -552,8 +552,45 @@ export const mt4nbt5: ItemGenerator = {
   },
 }
 
-function draftFor(format: number, a: number, b: number, rng: Rng): Draft {
-  switch (format) {
+/**
+ * A named bare product as an item, for a tackle-back decomposed from the
+ * question he missed: an area of 14 by 6 becomes `14 × 6`, chosen rather than
+ * drawn, because area is a multiplication before it is anything else.
+ *
+ * Pitched by the shape of the sum rather than by what he was asked, so the
+ * rating on this standard moves by what he actually worked out: two digits by
+ * one sits in the bottom band, three by one in the second, anything longer or
+ * two-digit by two-digit in the third. Never the top band, which is reserved
+ * for the shapes where every part is live.
+ *
+ * `null` when the pair is not a product this standard asks — both factors
+ * single digits is a multiplication fact, and belongs to `FLU.MULT`.
+ */
+export function productItem(a: number, b: number): Item | null {
+  if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b < 1) return null
+  if (a > 9999 || b > 9999) return null
+  if (a <= 9 && b <= 9) return null
+  if (a >= 10 && b >= 10 && (a > 99 || b > 99)) return null
+
+  const [long] = byOneParts(a, b)
+  const index = isByTwo(a, b) ? 2 : Math.min(2, String(long).length - 2)
+  const [lo, hi] = RANGE
+  const width = (hi - lo + 1) / BANDS.length
+  const difficulty = Math.round(lo + width * index + width / 2)
+
+  const draft = bare(a, b)
+  return {
+    standardId: 'MT.4.NBT.5',
+    difficulty,
+    prompt: draft.prompt,
+    answer: { kind: 'rational', canonical: draft.answer },
+    params: { a, b, format: BARE },
+    workedSteps: draft.workedSteps,
+    misconceptions: draft.misconceptions,
+  }
+}
+
+function draftFor(format: number, a: number, b: number, rng: Rng): Draft {  switch (format) {
     case MISSING_FACTOR:
       return missingFactor(a, b, rng.int(0, 1))
     case WORD_GROUPS:

@@ -147,8 +147,20 @@ const CONVERSIONS: readonly Conversion[] = [
   { id: 'gal-c', from: GALLON, to: CUP, factor: 16 },
 ]
 
-const RANGE: [number, number] = [10, 80]
+/**
+ * How many of `to` make one `from`, or `undefined` when this table does not
+ * hold that pair.
+ *
+ * For the tackle-back that decomposes a missed conversion: `7 minutes` to
+ * seconds comes apart as `7 × 6` tens, and the multiplication fact inside it
+ * is the rung. Exported for that alone — the soundness test still refuses to
+ * read this table and walks its own ladder of units instead.
+ */
+export function factorBetween(from: number, to: number): number | undefined {
+  return CONVERSIONS.find((c) => c.from === from && c.to === to)?.factor
+}
 
+const RANGE: [number, number] = [10, 80]
 /**
  * The four difficulty bands, easiest first.
  *

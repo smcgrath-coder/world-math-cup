@@ -82,7 +82,9 @@ import type { Attempt, AttemptContext, ShotChoice, StandardRating } from '../sto
 import { checkAnswer, choiceCount, classifyMiss } from './answer'
 import type { MissClassification } from './answer'
 import { SPREAD, difficultyForSuccess } from './elo'
-import { generatorFor } from './items/generators'
+import { decompose } from './items/decompose'
+import { flumult, generatorFor } from './items/generators'
+import { generateFact } from './items/generators/flumult'
 import type { Item, ItemGenerator, Rng } from './items/types'
 import { TARGET_SUCCESS, selectItem } from './select'
 import type { Pressure } from './select'
@@ -873,11 +875,22 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
  *
  *  - `near` — the method was probably sound and the arithmetic slipped, so stay
  *    on the same standard and make the numbers kinder.
- *  - `off` and `misconception` — the method itself is probably wrong, so drop to
- *    the standard underneath it where one exists, and to a much easier item on
- *    the same standard where none does. A named misconception counts as a method
- *    problem: knowing he added the denominators tells us he is doing the wrong
- *    thing confidently, not that he slipped.
+ *  - `off` and `misconception` — the method itself is probably wrong, so go to
+ *    the standard underneath it. First choice is the sub-question **inside the
+ *    one he missed** (`decompose`): `347 × 6` comes apart at `7 × 6`, `97 ÷ 4`
+ *    at `4 × 4`, an area at the multiplication it is. Where the question has
+ *    nothing inside it to ask — `11 × 5`, a prime, a power-of-ten conversion —
+ *    a real item is drawn from the standard underneath instead, and from a much
+ *    easier item on the same standard where nothing sits underneath. A named
+ *    misconception counts as a method problem: knowing he added the
+ *    denominators tells us he is doing the wrong thing confidently, not that
+ *    he slipped.
+ *
+ * The drawn fallback never serves a times-0 or times-1 fact. That row used to
+ * be the whole of the multiplication table's bottom band, and because a
+ * scaffold aims well under the rating, nine multiplication tackle-backs in ten
+ * were `7 × 0` or `1 × 6` — the one part of the match he called too easy, and
+ * a rung to nowhere.
  *
  * Before any of that: a **parried choice**. If he picked one of three or more
  * options, the second chance is the same question without the option he chose —
@@ -911,6 +924,11 @@ export function chooseScaffold(
   if (narrowed !== null) return narrowed
 
   const conceptual = miss.kind !== 'near'
+  if (conceptual) {
+    const inside = decompose(item, deps.rng)
+    if (inside !== null) return inside
+  }
+
   const target = conceptual ? SCAFFOLD_TARGET_OFF : SCAFFOLD_TARGET_NEAR
   const standardId = conceptual ? (PREREQUISITE[item.standardId] ?? item.standardId) : item.standardId
 
@@ -922,7 +940,10 @@ export function chooseScaffold(
     return selectItem({ ratings: deps.ratings, pressure: 'own_third', rng: deps.rng })
   }
 
-  return generator.generate(scaffoldDifficulty(generator, item, target, deps), deps.rng)
+  const difficulty = scaffoldDifficulty(generator, item, target, deps)
+  // The table without its rule rows, see above.
+  if (generator.standardId === flumult.standardId) return generateFact(difficulty, deps.rng, false)
+  return generator.generate(difficulty, deps.rng)
 }
 
 /**
