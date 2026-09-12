@@ -1095,7 +1095,15 @@ describe('unreadable answers', () => {
     expect(after.score).toEqual(s.score)
     expect(after.phase).toBe('question')
     expect(after.currentItem).toBe(s.currentItem)
-    expect(after.lastMiss).toEqual({ kind: 'unreadable' })
+    expect(after.unreadable).toBe(true)
+    expect(after.lastMiss).toBeNull()
+  })
+
+  it('are forgotten the moment a real answer lands', () => {
+    const deps = makeDeps()
+    const s = answer(start(deps), '???', deps)
+    expect(s.unreadable).toBe(true)
+    expect(answer(s, right(s.currentItem!), deps).unreadable).toBe(false)
   })
 
   it('consume nothing during a tackle-back either', () => {
@@ -1110,6 +1118,25 @@ describe('unreadable answers', () => {
     expect(after.currentItem).toBe(missed.currentItem)
     expect(after.pendingItem).toBe(missed.pendingItem)
     expect(after.courage).toEqual(missed.courage)
+  })
+
+  it('leave the miss that opened the tackle-back alone, so the card still names it', () => {
+    // A stray Enter during the tackle-back used to overwrite `lastMiss` with
+    // "unreadable", and the worked-solution card then lost the explanation of
+    // what the keeper had actually read.
+    const deps = makeDeps()
+    const s = start(deps)
+    const missed = answer(s, wildMiss(s.currentItem!), deps)
+    const before = missed.lastMiss
+    expect(before).not.toBeNull()
+
+    const stray = answer(missed, '', deps)
+    expect(stray.unreadable).toBe(true)
+    expect(stray.lastMiss).toEqual(before)
+
+    const lost = reduce(stray, { type: 'tackleBackTimeout' }, deps)
+    expect(lost.phase).toBe('feedback')
+    expect(lost.lastMiss).toEqual(before)
   })
 
   it('never end the match, however many arrive', () => {
@@ -1716,13 +1743,12 @@ describe('the tackle-back scaffold', () => {
      * bring it back a second time on top of that — three askings of the same
      * question is not a retry any more, it is being stuck on it.
      */
-    // Two options, so this never gets parried (`withoutTheOptionHePicked` needs
-    // three or more to leave a real choice standing) — every miss on it takes
-    // the ordinary scaffold route.
-    const item = aChoiceWith(2)
-    const options = item.answer.kind === 'choice' ? item.answer.options : []
-    const correct = item.answer.kind === 'choice' ? item.answer.correct : 0
-    const wrong = options.find((_, i) => i !== correct)!
+    // A typed answer, so this never gets parried (only a choice of three or
+    // more can be) and does come back for a retry (a two-option question does
+    // not — see `a two-option question that was missed`). Every miss on it
+    // takes the ordinary scaffold route.
+    const item = generatorFor('MT.4.NBT.5')!.generate(60, makeRng(1))
+    const wrong = wildMiss(item)
 
     const deps = makeDeps(5)
     let s = start(deps)
@@ -1992,5 +2018,108 @@ describe('invariants', () => {
       const final = last(play(state, deps, respond))
       expect(final.phase, name).toBe('fulltime')
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The last question, and questions with one option left
+
+describe('a miss on the last question', () => {
+  /** Thirteen right answers, then whatever question is on screen. */
+  const atTheLast = (deps: MatchDeps) =>
+    advanceTo(start(deps), deps, (s) => s.questionsAsked === QUESTIONS_PER_MATCH - 1 && s.phase === 'question')
+
+  it('is explained before the whistle, not whistled over', () => {
+    // There is no fourteenth-and-a-half question to win the ball back with, but
+    // the worked solution is still owed. The last thing he sees of a match must
+    // not be a miss with nothing said about it.
+    const deps = makeDeps(11)
+    const s = atTheLast(deps)
+    const item = s.currentItem!
+    const missed = answer(s, wildMiss(item), deps)
+
+    expect(missed.phase).toBe('feedback')
+    expect(missed.currentItem).toBe(item)
+    expect(missed.lastMiss).not.toBeNull()
+    expect(missed.questionsAsked).toBe(QUESTIONS_PER_MATCH)
+    // No tackle-back happened, so none is counted.
+    expect(missed.courage.tackleBacksFaced).toBe(s.courage.tackleBacksFaced)
+
+    const over = reduce(missed, { type: 'dismissFeedback' }, deps)
+    expect(over.phase).toBe('fulltime')
+    expect(over.log).toHaveLength(QUESTIONS_PER_MATCH)
+  })
+
+  it('still shows the working when the fourteenth question was a lost tackle-back', () => {
+    const deps = makeDeps(12)
+    const s = advanceTo(start(deps), deps, (x) => x.questionsAsked === QUESTIONS_PER_MATCH - 2 && x.phase === 'question')
+    const item = s.currentItem!
+    const missed = answer(s, wildMiss(item), deps)
+    expect(missed.phase).toBe('tackleback')
+
+    const lost = reduce(missed, { type: 'tackleBackTimeout' }, deps)
+    expect(lost.phase).toBe('feedback')
+    expect(lost.currentItem).toBe(item)
+    expect(lost.questionsAsked).toBe(QUESTIONS_PER_MATCH)
+
+    expect(reduce(lost, { type: 'dismissFeedback' }, deps).phase).toBe('fulltime')
+  })
+
+  it('a won fourteenth-question tackle-back still ends at the whistle', () => {
+    // The retake would be a fifteenth question. Winning the ball back is
+    // counted; the whistle goes.
+    const deps = makeDeps(13)
+    const s = advanceTo(start(deps), deps, (x) => x.questionsAsked === QUESTIONS_PER_MATCH - 2 && x.phase === 'question')
+    const missed = answer(s, wildMiss(s.currentItem!), deps)
+    const won = answer(missed, right(missed.currentItem!), deps)
+    expect(won.phase).toBe('fulltime')
+    expect(won.courage.tackleBacksWon).toBe(s.courage.tackleBacksWon + 1)
+  })
+})
+
+describe('a two-option question that was missed', () => {
+  const twoOptions = aChoiceWith(2)
+
+  /** A fresh match with `twoOptions` on screen, optionally as a shot. */
+  const facing = (deps: MatchDeps, shot: ShotChoice | null): MatchState => {
+    const s = start(deps)
+    return { ...s, currentItem: twoOptions, shotChoice: shot, zone: shot === null ? 'midfield' : s.zone }
+  }
+
+  it('is not brought back after the tackle-back: he would answer it by elimination', () => {
+    const deps = makeDeps(3)
+    const s = facing(deps, null)
+    const wrong = twoOptions.answer.kind === 'choice' ? otherOption(twoOptions.answer) : ''
+    const missed = answer(s, wrong, deps)
+    expect(missed.phase).toBe('tackleback')
+    expect(missed.parried).toBe(false)
+    expect(missed.pendingItem).toBe(twoOptions)
+
+    const won = answer(missed, right(missed.currentItem!), deps)
+    expect(won.phase).toBe('question')
+    expect(won.possession).toBe('us')
+    expect(won.currentItem).not.toBe(twoOptions)
+    expect(won.currentItem!.prompt).not.toBe(twoOptions.prompt)
+    expect(won.pendingItem).toBeNull()
+    expect(won.retakenItem).toBeNull()
+  })
+
+  it('as a shot, is shot again on a fresh question rather than a certainty', () => {
+    const deps = makeDeps(4)
+    const s = facing(deps, 'box')
+    const wrong = twoOptions.answer.kind === 'choice' ? otherOption(twoOptions.answer) : ''
+    const missed = answer(s, wrong, deps)
+    expect(missed.phase).toBe('tackleback')
+
+    const won = answer(missed, right(missed.currentItem!), deps)
+    expect(won.phase).toBe('question')
+    expect(won.shotChoice).toBe('box')
+    expect(won.currentItem).not.toBe(twoOptions)
+    // A retake, so a second miss and a won tackle-back do not bring it back a
+    // third time — the same rule every other retake follows.
+    expect(won.retakenItem).toBe(won.currentItem)
+    // And scoring it scores.
+    const scored = answer(won, right(won.currentItem!), deps)
+    expect(scored.score[0]).toBe(s.score[0] + 1)
   })
 })

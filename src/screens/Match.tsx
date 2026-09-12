@@ -456,7 +456,7 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
 
     // Unparseable input costs nothing: the reducer consumed no question and
     // logged no attempt, so neither does the screen.
-    if (after.log.length === before.log.length && after.lastMiss?.kind === 'unreadable') {
+    if (after.log.length === before.log.length && after.unreadable) {
       setUnreadable(true)
       return
     }

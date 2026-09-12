@@ -362,6 +362,17 @@ export interface MatchState {
    */
   lastMiss: MissClassification | null
   /**
+   * The last answer could not be read, and nothing happened: no question
+   * consumed, no attempt logged, no possession lost. The screen re-prompts.
+   *
+   * Its own flag rather than a kind of `lastMiss`, which is where it used to
+   * land. During a tackle-back `lastMiss` describes the miss that opened it,
+   * and a stray Enter overwriting that with "unreadable" cost the feedback card
+   * its named explanation — the keeper had read the shot all the way and the
+   * card then said nothing about it.
+   */
+  unreadable: boolean
+  /**
    * Chances they have had in this attack. `concedeAfter` of them concedes.
    *
    * Cumulative across the attack rather than consecutive. Outside a knockout
@@ -561,6 +572,7 @@ export function startMatch(opts: {
     parried: false,
     retakenItem: null,
     lastMiss: null,
+    unreadable: false,
     defensiveStops: 0,
     clearances: 0,
     shotChoice: null,
@@ -636,7 +648,7 @@ function onAnswer(
   // Unreadable input costs nothing: no question consumed, no attempt logged, no
   // possession lost. An accidental Enter keypress must be free, and the store
   // must never see an attempt that was never really made.
-  if (result.unparseable === true) return { ...state, lastMiss: UNREADABLE }
+  if (result.unparseable === true) return { ...state, unreadable: true }
 
   const miss = result.correct ? null : classify(event.given, item)
   return applyAnswer(
@@ -679,6 +691,7 @@ function applyAnswer(
   const attempt = makeAttempt(state, item, judged, inTackleBack ? 'tackleback' : 'match', deps)
   const logged: MatchState = {
     ...state,
+    unreadable: false,
     log: [...state.log, attempt],
     questionsAsked: state.questionsAsked + 1,
   }
@@ -788,18 +801,41 @@ function enterTackleBack(
   miss: MissClassification | null,
   deps: MatchDeps,
 ): MatchState {
-  if (isOver(state)) return fullTime(state)
+  // A tackle-back is a question, and the fourteenth has just been asked. There
+  // is no room to win the ball back, but the worked solution is still owed:
+  // the last thing he sees of a match must not be a miss with nothing said
+  // about it. Same card as a lost tackle-back; the whistle follows it.
+  if (isOver(state)) return explainThenWhistle(state, original)
 
-  const scaffold = chooseScaffold(original, given, miss ?? UNCERTAIN, deps, state.shotChoice === null)
+  const parry = state.shotChoice === null ? withoutTheOptionHePicked(original, given) : null
+  const scaffold = parry ?? chooseScaffold(original, given, miss ?? UNCERTAIN, deps, false)
 
   return pauseIfHalftime({
     ...state,
     phase: 'tackleback',
     currentItem: scaffold,
     pendingItem: original,
-    parried: scaffold.prompt === original.prompt,
+    // By construction, never by comparing text. A drawn scaffold on a small
+    // pool can coincide with the question word for word — `1 × 9` drawn as
+    // the rung under `1 × 9` — and reading that as a parry would quietly end
+    // a shot that was pending.
+    parried: parry !== null,
     courage: { ...state.courage, tackleBacksFaced: state.courage.tackleBacksFaced + 1 },
   })
+}
+
+/** The worked solution for `original`, with the ball gone; dismissing it blows the whistle. */
+function explainThenWhistle(state: MatchState, original: Item): MatchState {
+  return {
+    ...state,
+    phase: 'feedback',
+    possession: 'them',
+    currentItem: original,
+    pendingItem: null,
+    parried: false,
+    retakenItem: null,
+    shotChoice: null,
+  }
 }
 
 /** Won it back: the question he missed returns, in the same place on the pitch. */
@@ -827,6 +863,33 @@ function winTackleBack(state: MatchState, deps: MatchDeps): MatchState {
   }
   if (isOver(won)) return fullTime(won)
 
+  // A two-option question cannot be parried (see `withoutTheOptionHePicked`),
+  // so it took the ordinary scaffold — and bringing it back now would be a
+  // question with one option left, which he answers by elimination. Logged as
+  // correct, rated, and a goal if it was a shot: a free point for having been
+  // wrong. So the ball is his and play moves on. If the miss was a shot, the
+  // shot is still his too — the keeper spilled it — but on a fresh question at
+  // the same pressure, because a retake that is a certainty is not a shot.
+  if (choiceCount(original.answer) === 2) {
+    if (won.shotChoice === null) {
+      return serveQuestion({ ...won, pendingItem: null, retakenItem: null }, deps)
+    }
+    const again = selectItem({
+      ratings: biasedRatings(won.shotChoice, won.opponent, deps),
+      pressure: won.shotChoice,
+      rng: deps.rng,
+      probeWeakest: deps.probeWeakest,
+      recentStandardIds: recentStandards(won),
+    })
+    return pauseIfHalftime({
+      ...won,
+      phase: 'question',
+      currentItem: again,
+      pendingItem: null,
+      retakenItem: again,
+    })
+  }
+
   return pauseIfHalftime({
     ...won,
     phase: 'question',
@@ -853,10 +916,12 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
     defensiveStops: 0,
     clearances: 0,
   }
-  if (isOver(lost)) return fullTime(lost)
 
   const original = lost.pendingItem
   if (original === null) return serveQuestion(lost, deps)
+  // Over, but the working is still shown: `dismissFeedback` serves the next
+  // question, and serving when the fourteen are up is the whistle.
+  if (isOver(lost)) return explainThenWhistle(lost, original)
 
   return pauseIfHalftime({
     ...lost,
@@ -877,8 +942,9 @@ function loseTackleBack(state: MatchState, deps: MatchDeps): MatchState {
  *    on the same standard and make the numbers kinder.
  *  - `off` and `misconception` — the method itself is probably wrong, so go to
  *    the standard underneath it. First choice is the sub-question **inside the
- *    one he missed** (`decompose`): `347 × 6` comes apart at `7 × 6`, `97 ÷ 4`
- *    at `4 × 4`, an area at the multiplication it is. Where the question has
+ *    one he missed** (`decompose`): `347 × 6` comes apart at `4 × 6`, `97 ÷ 4`
+ *    at `4 × 2`, an area at the multiplication it is — always the easiest fact
+ *    inside, because this is a rung and not a second test. Where the question has
  *    nothing inside it to ask — `11 × 5`, a prime, a power-of-ten conversion —
  *    a real item is drawn from the standard underneath instead, and from a much
  *    easier item on the same standard where nothing sits underneath. A named
@@ -1237,8 +1303,6 @@ const recentStandards = (state: MatchState): string[] =>
 
 // ---------------------------------------------------------------------------
 // Judging, defensively
-
-const UNREADABLE: MissClassification = { kind: 'unreadable' }
 
 /**
  * What a miss we could not classify is treated as.
