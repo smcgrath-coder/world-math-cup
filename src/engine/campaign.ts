@@ -154,11 +154,29 @@ function scoreline(rng: Rng, favouredDiff: number): [number, number] {
 // ---------------------------------------------------------------------------
 // Qualifying
 
-/** Three mid-tier opponents, close to his own level or a little above — earnable, not a gimme. */
+/** How many of the nearest-rated sides the draw falls back to when the band round him is thin. */
+const NEAREST_POOL = 6
+
+/**
+ * Three mid-tier opponents, close to his own level or a little above — earnable,
+ * not a gimme.
+ *
+ * The roster bottoms out in the mid-fifties, so a player rated in the forties
+ * or below has an empty band round him. The fallback used to sort the whole
+ * roster by closeness and then draw uniformly from *all* of it, which made the
+ * sort decorative: measured over 300 seeds, a player rated 30–43 met one of
+ * 57 different sides and opened his first cup against Spain or Brazil one
+ * time in eight. That is the child who most needs the draw to be kind, handed
+ * the tier-1 tackle clock and a two-miss concession. The fallback now draws
+ * from the six nearest-rated sides only.
+ */
 export function drawQualifying(overall: number, seed: number): QualifyingCampaign {
   const rng = makeRng(seed)
   const band = OPPONENTS.filter((o) => o.rating >= overall - 8 && o.rating <= overall + 12)
-  const pool = band.length >= 3 ? band : [...OPPONENTS].sort((a, b) => Math.abs(a.rating - overall) - Math.abs(b.rating - overall))
+  const nearest = [...OPPONENTS]
+    .sort((a, b) => Math.abs(a.rating - overall) - Math.abs(b.rating - overall))
+    .slice(0, NEAREST_POOL)
+  const pool = band.length >= 3 ? band : nearest
 
   const chosen: Opponent[] = []
   const available = [...pool]
@@ -316,7 +334,20 @@ const emptyStanding = (teamId: string): GroupStanding => ({
   points: 0,
 })
 
-/** The table for one group, sorted points first and goal difference second — the two rules the plan asks for, and the only two: this format never needs head-to-head or a coin toss to separate two of four teams. */
+/**
+ * The table for one group, sorted points first, goal difference second, goals
+ * scored third.
+ *
+ * The plan asked for the first two. The third is here because equal points
+ * *and* equal difference is perfectly possible in four teams (three draws
+ * apiece, say), and without it the tie fell to whatever order the teams were
+ * listed in — which happened to favour the player in group 0 and the tier-1
+ * side elsewhere, silently, and would have flipped if anyone reordered the
+ * tuple. Goals scored is the rule real tournaments use next, and it is a
+ * rule rather than an accident. A full three-way tie after that falls to
+ * listing order, and that is now the documented last resort rather than the
+ * second.
+ */
 export function groupTable(
   teamIds: readonly [string, string, string, string],
   matches: readonly PlayedFixture[],
@@ -349,7 +380,9 @@ export function groupTable(
     }
   }
 
-  return [...table.values()].sort((a, b) => b.points - a.points || b.gf - b.ga - (a.gf - a.ga))
+  return [...table.values()].sort(
+    (a, b) => b.points - a.points || b.gf - b.ga - (a.gf - a.ga) || b.gf - a.gf,
+  )
 }
 
 function groupOf(campaign: GroupCampaign, teamId: string): readonly [string, string, string, string] {

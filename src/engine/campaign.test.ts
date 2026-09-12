@@ -106,6 +106,23 @@ describe('drawQualifying', () => {
     expect(q.opponentIds).toHaveLength(3)
     expect(new Set(q.opponentIds).size).toBe(3)
   })
+
+  it('never hands a struggling player a giant', () => {
+    // The roster bottoms out in the mid-fifties, so anyone rated in the
+    // forties or below has an empty band round him. The fallback used to draw
+    // from the whole roster — Spain and Brazil included, one time in eight.
+    const weakest = [...OPPONENTS].sort((a, b) => a.rating - b.rating).slice(0, 6)
+    const allowed = new Set(weakest.map((o) => o.id))
+    for (const overall of [1, 30, 38, 43]) {
+      for (const seed of SEEDS) {
+        for (const id of drawQualifying(overall, seed).opponentIds) {
+          const o = OPPONENTS.find((x) => x.id === id)!
+          expect(allowed.has(id), `overall ${overall} seed ${seed} drew ${o.name} (${o.rating}, tier ${o.tier})`).toBe(true)
+          expect(o.tier, o.name).toBeGreaterThanOrEqual(3)
+        }
+      }
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -223,6 +240,23 @@ describe('groupTable', () => {
     const aIdx = table.findIndex((t) => t.teamId === 'a')
     const cIdx = table.findIndex((t) => t.teamId === 'c')
     expect(aIdx).toBeLessThan(cIdx)
+  })
+
+  it('breaks a points-and-difference tie on goals scored, not on listing order', () => {
+    // Three draws apiece leave every team level on points and on difference.
+    // The tie used to fall to the order the teams were listed in, which
+    // quietly favoured whoever was first in the tuple; goals scored is a rule.
+    const table = groupTable(teams, [
+      { homeId: 'a', awayId: 'b', home: 0, away: 0 },
+      { homeId: 'c', awayId: 'd', home: 3, away: 3 }, // c and d: 3 scored
+      { homeId: 'a', awayId: 'c', home: 1, away: 1 }, // a: 1, c: 4
+      { homeId: 'b', awayId: 'd', home: 2, away: 2 }, // b: 2, d: 5
+      { homeId: 'a', awayId: 'd', home: 0, away: 0 },
+      { homeId: 'b', awayId: 'c', home: 0, away: 0 },
+    ])
+    expect(table.map((t) => t.points)).toEqual([3, 3, 3, 3])
+    expect(table.map((t) => t.gf - t.ga)).toEqual([0, 0, 0, 0])
+    expect(table.map((t) => t.teamId)).toEqual(['d', 'c', 'b', 'a'])
   })
 
   it('ignores matches that do not belong to this group', () => {
