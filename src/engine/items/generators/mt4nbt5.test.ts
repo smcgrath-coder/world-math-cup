@@ -282,6 +282,31 @@ describe('MT.4.NBT.5 multiplying multi-digit whole numbers', () => {
     }
   })
 
+  it('does not collapse onto 11 in the easiest band', () => {
+    // A digit that does not carry against 5 is 0 or 1, so with 5 in the band
+    // the only carry-free two-digit number was 11, and `5 × 11` was one item
+    // in six at the bottom of the standard. A band that a child can learn by
+    // its one number is not measuring the standard.
+    const items = itemsAt(EASIEST, 300)
+    const elevens = items.filter((i) => {
+      const [long] = byOneParts(i.params.a!, i.params.b!)
+      return long === 11
+    })
+    expect(elevens.length / items.length).toBeLessThan(0.08)
+    const longs = new Set(items.map((i) => byOneParts(i.params.a!, i.params.b!)[0]))
+    expect(longs.size).toBeGreaterThan(20)
+  })
+
+  it('sets up a ten-times question with a real fact, never a times-one rule', () => {
+    for (const item of everyItem()) {
+      if (item.params.format !== TEN_TIMES) continue
+      const { a, b } = item.params as Record<string, number>
+      const digit = Number(String(b).replace(/0+$/, ''))
+      expect(digit, item.prompt).toBeGreaterThanOrEqual(2)
+      expect(a, item.prompt).toBeGreaterThanOrEqual(2)
+    }
+  })
+
   it('always carries in the top two bands', () => {
     for (const d of [52, 69, 71, HARDEST]) {
       for (const item of itemsAt(d)) {

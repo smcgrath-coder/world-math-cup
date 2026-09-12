@@ -152,7 +152,16 @@ interface Band {
  */
 const BANDS: readonly Band[] = [
   {
-    specs: [{ shape: BY_ONE, digits: 2, multipliers: [2, 3, 4, 5], carry: 'none' }],
+    // No 5 here: a digit that does not carry when multiplied by 5 is 0 or 1,
+    // and with the ones and leading places both kept off 0 the only two-digit
+    // number that qualified was 11 — so `5 × 11` was one item in six at the
+    // bottom of this standard, and the ten-times framing was handing over
+    // `5 × 1 = 5` as the "fact he already knows". Three-digit numbers join
+    // the band instead, still carry-free, so it has somewhere to go.
+    specs: [
+      { shape: BY_ONE, digits: 2, multipliers: [2, 3, 4], carry: 'none' },
+      { shape: BY_ONE, digits: 3, multipliers: [2, 3], carry: 'none' },
+    ],
     zeros: [1],
     formats: [BARE, WORD_GROUPS, TEN_TIMES],
   },
@@ -464,7 +473,10 @@ function buildTenTimes(rng: Rng, band: Band): Factors {
   const multiplier = rng.pick(spec.multipliers)
   const mustCarry =
     spec.carry === 'some' ? true : spec.carry === 'none' ? false : rng.int(0, 1) === 1
-  const digit = rng.pick(digitPool(multiplier, 1, mustCarry))
+  // From 2, never 1: the framing rests on "a fact he already knows", and
+  // `9 × 1 = 9` is a rule, not a fact — the question it set up was
+  // `9 × 10`, which is the same rule again with a zero on it.
+  const digit = rng.pick(digitPool(multiplier, 2, mustCarry))
   return { a: multiplier, b: digit * 10 ** rng.pick(band.zeros) }
 }
 
