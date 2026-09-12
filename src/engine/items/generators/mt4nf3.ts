@@ -241,7 +241,12 @@ function termsFor(band: Band, op: number, format: number): Terms[] {
         for (let n2 = 1; n2 <= most; n2++) out.push({ n1, n2, den })
       }
     } else {
-      const maxFirst = band.firstMayBeImproper ? den + Math.floor(den / 2) : den
+      // Strictly inside one whole unless the band lets the first term go past
+      // it. `3/3 − 2/3` used to be the commonest item at the very bottom of
+      // this standard: true, and a whole written as a fraction is a thing a
+      // child meets later, not the thing an entry band should open on. Where
+      // the first term may be improper, the whole and past it are the point.
+      const maxFirst = band.firstMayBeImproper ? den + Math.floor(den / 2) : den - 1
       for (let n1 = 2; n1 <= maxFirst; n1++) {
         // Strictly smaller, so the answer is never negative. Negative fractions
         // are years away and a negative answer here would be a question about a

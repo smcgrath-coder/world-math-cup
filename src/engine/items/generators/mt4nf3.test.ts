@@ -348,3 +348,32 @@ describe('MT.4.NF.3 add/subtract like denominators', () => {
     expect(item.workedSteps.join(' ')).toContain(`${total} + ${n2} = ${n1}`)
   })
 })
+
+describe('the entry bands and the whole', () => {
+  it('never opens a subtraction on a whole written as a fraction', () => {
+    // `3/3 − 2/3` was the commonest item at the very bottom of the range. A
+    // whole written as n/n is a later idea; the bands that keep the first term
+    // inside one whole now keep it strictly inside.
+    for (const d of [5, 12, 20, 28, 35]) {
+      for (let seed = 0; seed < 200; seed++) {
+        const item = mt4nf3.generate(d, makeRng(seed))
+        const { n1, den, op } = item.params as Record<string, number>
+        if (op !== 0) continue
+        expect(n1, item.prompt).toBeLessThan(den!)
+      }
+    }
+  })
+
+  it('still starts a subtraction above a whole where the band allows it', () => {
+    // The point of the upper bands is that subtraction can reach or cross 1
+    // at all, which needs an improper first term. Tightening the entry bands
+    // must not have taken that away.
+    let improper = 0
+    for (let seed = 0; seed < 300; seed++) {
+      const item = mt4nf3.generate(75, makeRng(seed))
+      const { n1, den, op } = item.params as Record<string, number>
+      if (op === 0 && n1! >= den!) improper++
+    }
+    expect(improper).toBeGreaterThan(0)
+  })
+})
