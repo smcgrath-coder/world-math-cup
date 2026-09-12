@@ -20,11 +20,20 @@
  * **Banded by how hard the fact is, not by how big it is.** There are only 81
  * facts, so size is the wrong dial: 2 × 9 has a bigger product than 7 × 8 and
  * is a far easier fact, and 9 × 9 is the biggest product in the table while
- * having a trick that makes it easy. Zeros, ones, twos, fives are easy; threes,
- * fours, sixes, nines are middling; sevens and eights are where fourth graders
+ * having a trick that makes it easy. Twos and fives are easy; threes, fours,
+ * sixes, nines are middling; sevens and eights are where fourth graders
  * actually stall.
  *
- * The two edges of the table are where the care goes. `a × 1` answered as
+ * **Zeros and ones are rules, not facts, and are served as a rarity.** They
+ * used to be the whole of the bottom band, and because Elo targeting aims a
+ * little under the rating, a player rated anywhere up to about 60 here was
+ * being served `0 × n` and `1 × n` for two thirds of his multiplication
+ * facts — and nine tackle-backs in ten, since a scaffold aims lower still. A
+ * ten-year-old entering fifth grade has those rows cold; a drill made of them
+ * is not a drill, and a rung made of them leads nowhere. They stay in the two
+ * lower bands at one draw in eight, as a check that the rule is still there,
+ * and `generateFact` can leave them out altogether for the tackle-back.
+ * * The two edges of the table are where the care goes. `a × 1` answered as
  * `a + 1` and `a × 0` answered as `a` are the real mistakes and both are named.
  * But on `a × 0` almost every wrong answer worth naming collapses onto 0, which
  * is also the correct answer — and on `0 × 0` all of them do, which is why that
@@ -42,8 +51,8 @@ const TIMES = '×'
 
 const RANGE: [number, number] = [8, 88]
 
-/** Facts a fourth grader gets from a rule rather than from memory. */
-const EASY = [0, 1, 2, 5]
+/** Facts a fourth grader gets from doubling or from counting in fives. */
+const EASY = [2, 5]
 /** Known, but counted to rather than recalled. */
 const MIDDLING = [3, 4, 6, 9]
 /** Sevens and eights. Everything else is easier than these.  */
@@ -61,36 +70,52 @@ function tier(n: number): number {
 }
 
 /**
- * How hard a fact is.
+ * A fact you get from a rule rather than from memory: anything times 0 or 1.
  *
- * Anything times 0 or 1 is easy whatever it is multiplied by — `0 × 8` is a
- * rule, not a fact to recall, and banding it as hard because of the 8 would put
- * it in front of the child who least needs it. Everything else is the two
- * factors' tiers added, so a hard factor met by a middling one lands above two
- * middling ones.
+ * `0 × 8` is not a thing to recall, and banding it by the 8 would put it in
+ * front of the child who least needs it. These are kept out of the hardness
+ * scale altogether and drawn from their own small pool, rarely.
+ */
+export function isRuleFact(a: number, b: number): boolean {
+  return a <= 1 || b <= 1
+}
+
+/**
+ * How hard a real fact is: the two factors' tiers added, so a hard factor met
+ * by a middling one lands above two middling ones. Rule facts do not have a
+ * hardness; ask `isRuleFact` first.
  */
 function hardness(a: number, b: number): number {
-  if (a <= 1 || b <= 1) return 0
   return tier(a) + tier(b)
 }
 
 /**
  * The four difficulty bands, easiest first, as the range of fact hardness each
- * one draws from.
+ * one draws from, and whether the rule facts may appear in it at all.
  *
  * The bands overlap by one step rather than partitioning cleanly, so a rating
  * sitting near a boundary does not flip between two disjoint sets of facts on
- * every question. The top band is the smallest — twenty facts — because the
+ * every question. The bottom band is the twos and fives, on their own and
+ * against the middling row — the facts a child who has just learned his tables
+ * really does know. The top band is the smallest — twenty facts — because the
  * genuinely hard corner of a 9 by 9 table is genuinely small, and drilling
  * exactly it is the point.
  */
-const BANDS: readonly { min: number; max: number }[] = [
-  { min: 0, max: 0 },
-  { min: 0, max: 1 },
-  { min: 1, max: 2 },
-  { min: 3, max: 4 },
+const BANDS: readonly { min: number; max: number; rules: boolean }[] = [
+  { min: 0, max: 1, rules: true },
+  { min: 1, max: 2, rules: true },
+  { min: 2, max: 3, rules: false },
+  { min: 3, max: 4, rules: false },
 ]
 
+/**
+ * One draw in this many is a rule fact, in the bands that allow them.
+ *
+ * Small enough that a match never reads as a row of zeros, large enough that
+ * `7 × 0` answered as `7` — the one real mistake on that row — still gets met
+ * and named now and then.
+ */
+const RULE_SHARE = 8
 interface Fact {
   a: number
   b: number
@@ -111,24 +136,36 @@ interface Fact {
  */
 const POOLS = new Map<number, Fact[]>()
 
+/** Every fact in the table bar `0 × 0`, both orders. */
+function allFacts(): Fact[] {
+  const out: Fact[] = []
+  for (let a = 0; a <= 9; a++) {
+    for (let b = 0; b <= 9; b++) {
+      if (a === 0 && b === 0) continue
+      // Both orders are kept. `7 × 8` and `8 × 7` are the same product and not
+      // the same question to a child who learned his tables one row at a time.
+      out.push({ a, b })
+    }
+  }
+  return out
+}
+
+/** The real facts a band draws from — never a rule fact. */
 function poolFor(index: number): Fact[] {
   const cached = POOLS.get(index)
   if (cached) return cached
   const { min, max } = BANDS[index]!
-  const pool: Fact[] = []
-  for (let a = 0; a <= 9; a++) {
-    for (let b = 0; b <= 9; b++) {
-      if (a === 0 && b === 0) continue
-      const h = hardness(a, b)
-      // Both orders are kept. `7 × 8` and `8 × 7` are the same product and not
-      // the same question to a child who learned his tables one row at a time.
-      if (h >= min && h <= max) pool.push({ a, b })
-    }
-  }
+  const pool = allFacts().filter(({ a, b }) => {
+    if (isRuleFact(a, b)) return false
+    const h = hardness(a, b)
+    return h >= min && h <= max
+  })
   POOLS.set(index, pool)
   return pool
 }
 
+/** The times-0 and times-1 rows, both orders, without `0 × 0`. */
+const RULE_POOL: readonly Fact[] = allFacts().filter(({ a, b }) => isRuleFact(a, b))
 function bandIndexFor(difficulty: number): number {
   const [lo, hi] = RANGE
   const share = (difficulty - lo) / (hi - lo + 1)
@@ -151,24 +188,73 @@ export const flumult: ItemGenerator = {
   range: RANGE,
 
   generate(difficulty: number, rng: Rng): Item {
-    const d = clampDifficulty(difficulty)
-    const { a, b } = rng.pick(poolFor(bandIndexFor(d)))
-    const product = a * b
-
-    return {
-      standardId: 'FLU.MULT',
-      difficulty: d,
-      prompt: `${a} ${TIMES} ${b}`,
-      // The largest product here is 81, so every value is an exact whole number
-      // nowhere near where doubles stop being exact.
-      answer: { kind: 'rational', canonical: String(product) },
-      params: { a, b },
-      workedSteps: workedSteps(a, b, product),
-      misconceptions: misconceptionsFor(a, b, product),
-    }
+    return generateFact(difficulty, rng, true)
   },
 }
 
+/**
+ * Draw a fact at a difficulty.
+ *
+ * `allowRules` is what separates practice from a tackle-back. In practice the
+ * rule facts appear at `RULE_SHARE` in the lower bands. A tackle-back is the
+ * rung back to a question he just missed, and `7 × 0` is not a rung to
+ * anything, so `chooseScaffold` asks with `false` and is never handed one.
+ *
+ * The rule draw comes first and consumes one `rng` call whether or not it hits,
+ * so the fact drawn for a seed with rules allowed is the same fact drawn for
+ * that seed with them refused whenever the coin says no.
+ */
+export function generateFact(difficulty: number, rng: Rng, allowRules: boolean): Item {
+  const d = clampDifficulty(difficulty)
+  const band = BANDS[bandIndexFor(d)]!
+  const rule = band.rules && rng.int(0, RULE_SHARE - 1) === 0
+  const { a, b } = rule && allowRules ? rng.pick(RULE_POOL) : rng.pick(poolFor(bandIndexFor(d)))
+  return buildFact(a, b, d)
+}
+
+/**
+ * A named fact as an item, for a tackle-back decomposed from the question he
+ * missed: `347 × 6` becomes `7 × 6`, chosen rather than drawn.
+ *
+ * Pitched by how hard the fact is, not by what he was asked, so the rating on
+ * this standard moves by what he actually answered. A rule fact sits at the
+ * floor; a real fact sits in the middle of the lowest band that draws it.
+ *
+ * Throws on anything outside the table. The callers build these from a
+ * question's own digits and check them first, so a throw here is a bug and not
+ * a thing to recover from quietly.
+ */
+export function factItem(a: number, b: number): Item {
+  const inTable = (n: number) => Number.isInteger(n) && n >= 0 && n <= 9
+  if (!inTable(a) || !inTable(b) || (a === 0 && b === 0)) {
+    throw new RangeError(`${a} × ${b} is not a fact in the table`)
+  }
+  return buildFact(a, b, difficultyForFact(a, b))
+}
+
+function difficultyForFact(a: number, b: number): number {
+  const [lo, hi] = RANGE
+  if (isRuleFact(a, b)) return lo
+  const h = hardness(a, b)
+  const index = BANDS.findIndex((band) => h >= band.min && h <= band.max)
+  const width = (hi - lo + 1) / BANDS.length
+  return Math.round(lo + width * index + width / 2)
+}
+
+function buildFact(a: number, b: number, difficulty: number): Item {
+  const product = a * b
+  return {
+    standardId: 'FLU.MULT',
+    difficulty,
+    prompt: `${a} ${TIMES} ${b}`,
+    // The largest product here is 81, so every value is an exact whole number
+    // nowhere near where doubles stop being exact.
+    answer: { kind: 'rational', canonical: String(product) },
+    params: { a, b },
+    workedSteps: workedSteps(a, b, product),
+    misconceptions: misconceptionsFor(a, b, product),
+  }
+}
 /**
  * How many groups are worth writing out as an addition.
  *
