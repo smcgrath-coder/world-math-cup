@@ -21,7 +21,8 @@ import type { Item } from '../engine/items/types'
  */
 export interface AnswerInputProps {
   item: Item
-  onSubmit: (given: string, latencyMs: number) => void
+  /** `false` from a typed answer means "could not read that, leave it in the box". */
+  onSubmit: (given: string, latencyMs: number) => boolean | void
   disabled?: boolean
 }
 

@@ -7,10 +7,10 @@
  * still matters to the card — PAC is fluency — so latency is measured, from
  * mount to submit, and handed to the caller without ever being drawn. He is
  * timed the way a striker is timed: by what the stats say afterwards, never by a
- * clock ticking down while he thinks. The two places a visible clock is allowed
- * — the tackle-back and the penalties — are different components, and both are
- * situations where running out can only fail to *gain* him something rather than
- * take away something he already holds.
+ * clock ticking down while he thinks. The one place a visible clock is allowed
+ * — the tackle-back — is a different component, and it is a situation where
+ * running out can only fail to *gain* him something rather than take away
+ * something he already holds.
  *
  * **Two ways in, because there are two iPads.** With a hardware keyboard he
  * types and presses Enter, and the field takes focus on mount so that works
@@ -29,6 +29,12 @@
  * **An empty submit costs nothing.** A stray Enter, or a tap on the submit key
  * with an empty box, does nothing at all: no attempt, no error, no red. There is
  * nothing to be told off about, so nothing says anything.
+ *
+ * **An answer the caller could not read stays in the box.** `onSubmit` may
+ * return `false` to say so, and then nothing is cleared and the clock keeps
+ * running: he fixes the one character rather than typing `7 r 2` again from
+ * the start. The box used to empty itself before asking, which made every
+ * re-prompt a retype.
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -97,8 +103,11 @@ export interface QuestionInputProps {
    * box inside the expression. Optional: most items do not need it.
    */
   promptWithSlot?: string
-  /** The raw string, exactly as typed, and how long it took to arrive. */
-  onSubmit: (given: string, latencyMs: number) => void
+  /**
+   * The raw string, exactly as typed, and how long it took to arrive. Return
+   * `false` if it could not be read and should stay in the box for him to fix.
+   */
+  onSubmit: (given: string, latencyMs: number) => boolean | void
   /**
    * Locks the field while the caller is showing the result of the last answer.
    * Without it a child who presses Enter twice answers the next question with
@@ -138,10 +147,10 @@ export function QuestionInput({
     // Nothing at all happens on an empty submit. Not an error, not a shake.
     if (value.trim().length === 0) return
     const latencyMs = Math.max(0, Math.round(now() - startedAt.current))
+    inputRef.current?.focus()
+    if (onSubmit(value, latencyMs) === false) return
     setValue('')
     startedAt.current = now()
-    inputRef.current?.focus()
-    onSubmit(value, latencyMs)
   }
 
   const append = (text: string): void => {
@@ -188,7 +197,7 @@ export function QuestionInput({
         'rounded-2xl border-2 border-gold bg-white/10 text-center font-bold text-white',
         'caret-gold focus:border-gold focus:ring-4 focus:ring-gold/40 focus:outline-none',
         'disabled:opacity-60',
-        inline ? 'h-16 w-28 text-3xl' : 'h-20 w-full max-w-sm text-4xl',
+        inline ? 'h-16 w-28 text-3xl' : 'h-20 w-full max-w-sm text-4xl max-sm:h-16',
       )}
     />
   )
@@ -237,7 +246,7 @@ export function QuestionInput({
               else if (key.types !== undefined) append(key.types)
             }}
             className={clsx(
-              'flex h-16 items-center justify-center rounded-2xl font-bold transition-colors',
+              'flex h-16 items-center justify-center rounded-2xl font-bold transition-colors max-sm:h-14',
               key.action === 'submit'
                 ? 'col-span-2 bg-gold text-xl text-ink'
                 : 'bg-white/10 text-2xl text-white ring-1 ring-white/15 active:bg-white/20',

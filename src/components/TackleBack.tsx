@@ -1,6 +1,6 @@
 /**
- * The tackle-back clock: one of exactly two visible clocks in the game, and the
- * reason it is allowed to exist is worth stating where the code is.
+ * The tackle-back clock: the one visible clock in the game, and the reason it
+ * is allowed to exist is worth stating where the code is.
  *
  * Unfinished *timed* work cost this child recess last year, and the rule that
  * came out of it is that **no clock may take away something he already holds**.

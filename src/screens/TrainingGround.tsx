@@ -498,7 +498,7 @@ function Drill({
     }
   }
 
-  const submit = (given: string, latencyMs: number): void => {
+  const submit = (given: string, latencyMs: number): boolean | undefined => {
     if (result !== null || over) return
 
     const item = session.item
@@ -508,7 +508,7 @@ function Drill({
     // written in a way we failed to understand. Ask again rather than score it.
     if (check.unparseable === true) {
       setUnreadable(true)
-      return
+      return false
     }
     setUnreadable(false)
 

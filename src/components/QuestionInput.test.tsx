@@ -175,6 +175,25 @@ describe('QuestionInput', () => {
     expect(field()).toHaveFocus()
   })
 
+  it('keeps what he typed when the caller says it could not read it', async () => {
+    // A re-prompt used to arrive at an empty box, so `7 r 2` had to be typed
+    // again from the start to become `7`. The one character he needs to fix
+    // is still there now, and the clock keeps running on the same question.
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockReturnValueOnce(false).mockReturnValue(undefined)
+    render(<QuestionInput prompt="15 ÷ 2 = ?" onSubmit={onSubmit} />)
+
+    await user.type(field(), '7 r 1{Enter}')
+    expect(onSubmit).toHaveBeenCalledWith('7 r 1', expect.any(Number))
+    expect(field()).toHaveValue('7 r 1')
+    expect(field()).toHaveFocus()
+
+    await user.clear(field())
+    await user.type(field(), '7{Enter}')
+    expect(onSubmit).toHaveBeenLastCalledWith('7', expect.any(Number))
+    expect(field()).toHaveValue('')
+  })
+
   it('renders no countdown of any kind', () => {
     vi.useFakeTimers()
     const { container } = render(<QuestionInput prompt="7 × 8 = ?" onSubmit={vi.fn()} />)

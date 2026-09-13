@@ -183,7 +183,7 @@ export function Tryout({ seed, onDone }: TryoutProps) {
 
   const done = isComplete(session.state)
 
-  const submit = (given: string, latencyMs: number): void => {
+  const submit = (given: string, latencyMs: number): boolean | undefined => {
     if (settling || done) return
 
     const item = session.item
@@ -194,7 +194,7 @@ export function Tryout({ seed, onDone }: TryoutProps) {
     // no second bite at a question. Ask again instead of scoring it.
     if (result.unparseable === true) {
       setUnreadable(true)
-      return
+      return false
     }
     setUnreadable(false)
 

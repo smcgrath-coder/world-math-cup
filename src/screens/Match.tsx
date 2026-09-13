@@ -466,16 +466,17 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone, on
     return () => document.removeEventListener('visibilitychange', onHide)
   }, [])
 
-  const advance = (event: MatchEvent): void => {
+  /** Returns `false` when the answer could not be read, so the box keeps it. */
+  const advance = (event: MatchEvent): boolean => {
     const before = session.state
     const after = reduce(before, event, session.deps)
-    if (after === before) return
+    if (after === before) return true
 
     // Unparseable input costs nothing: the reducer consumed no question and
     // logged no attempt, so neither does the screen.
     if (after.log.length === before.log.length && after.unreadable) {
       setUnreadable(true)
-      return
+      return false
     }
     setUnreadable(false)
     setSession({ deps: session.deps, state: after })
@@ -510,6 +511,7 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone, on
     if (after.phase === 'fulltime' || after.log.length - written.current >= FLUSH_EVERY) {
       flushTail(after.log, written, askedItems, questions)
     }
+    return true
   }
 
   const walkOff = (): void => {
@@ -600,7 +602,8 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone, on
             <span className="min-w-0 flex-1 truncate">{opponent.name}</span>
           </div>
 
-          <div className="mt-3">
+          {/* Narrower on a phone, so the numpad below stays under his thumb without scrolling. */}
+          <div className="mx-auto mt-3 w-full max-sm:max-w-[220px]">
             <Pitch
               ball={{
                 zone: state.zone,
