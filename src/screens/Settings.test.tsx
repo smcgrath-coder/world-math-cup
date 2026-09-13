@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsScreen } from './Settings'
-import { getStore, resetStoreForTest } from '../store/storage'
+import { STORAGE_KEY, getStore, resetStoreForTest } from '../store/storage'
 import type { AttemptDraft, Country } from '../store/storage'
 
 const COUNTRY: Country = {
@@ -277,5 +277,62 @@ describe('the Family row', () => {
     expect(screen.getByText(/join with a code/i)).toBeInTheDocument()
     // And the rest of the grown-up section is still on screen beside it.
     expect(screen.getByText(/where the save lives/i)).toBeInTheDocument()
+  })
+})
+
+describe('how the save is doing', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('says so when saving is working', () => {
+    history()
+    render(<SettingsScreen />)
+    parentView()
+    expect(screen.getByTestId('save-health')).toHaveTextContent(/saving normally/i)
+  })
+
+  it('tells the grown-up when a write did not reach the device', () => {
+    // A full quota, a private window, storage switched off: the store has
+    // always recorded the failure and nothing ever showed it. Play carried on
+    // from memory and the whole session vanished on relaunch, unexplained.
+    render(<SettingsScreen />)
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    act(() => {
+      getStore().updateSettings({ soundEnabled: false })
+    })
+    parentView()
+
+    const health = screen.getByTestId('save-health')
+    expect(health).toHaveTextContent(/did not write/i)
+    expect(health).toHaveTextContent(/QuotaExceededError/)
+    expect(health).toHaveTextContent(/export the save/i)
+  })
+
+  it('tells the grown-up what a load had to leave out', () => {
+    // One good attempt and one that is not an attempt at all.
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        country: COUNTRY,
+        attempts: [
+          { id: 'a000001', at: 1, standardId: 'MT.4.NF.1', difficulty: 40, params: {}, given: '1', correct: true, latencyMs: 100, context: 'training' },
+          { id: 'a000002', at: 2, standardId: 'MT.4.NF.1', difficulty: 'lots', given: '1' },
+        ],
+        settings: {},
+        campaign: null,
+        seq: 2,
+      }),
+    )
+    resetStoreForTest()
+    render(<SettingsScreen />)
+    parentView()
+
+    const health = screen.getByTestId('save-health')
+    expect(health).toHaveTextContent(/1 answer could not be read/i)
+    expect(health).not.toHaveTextContent(/saving normally/i)
   })
 })

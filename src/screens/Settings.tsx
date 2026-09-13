@@ -106,6 +106,11 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
             </div>
 
             <div>
+              <Heading>How the save is doing</Heading>
+              <SaveHealth />
+            </div>
+
+            <div>
               <Heading>Every question answered</Heading>
               <ul className="flex flex-col gap-1.5">
                 {[...attempts]
@@ -302,5 +307,63 @@ function Toggle({
         <span className="h-5 w-5 rounded-full bg-white" />
       </span>
     </button>
+  )
+}
+
+/**
+ * Whether the save is actually reaching disk, and whether anything was left
+ * behind on the way in.
+ *
+ * The store has recorded both since the beginning — `persistError` when a
+ * write fails (a full quota, Safari's private mode, storage switched off) and
+ * a `LoadReport` when a load had to drop something corrupt — and its comments
+ * said the parent could see them "on the debug screen". Nothing ever rendered
+ * them. A match played in a private tab wrote nothing, said nothing, and was
+ * gone on relaunch with no explanation anywhere. This is the debug screen.
+ *
+ * Read on render rather than subscribed to: this screen already re-renders on
+ * every store commit (it lists the attempts), and a write failure is set
+ * during that same commit.
+ */
+function SaveHealth() {
+  const store = getStore()
+  const error = store.getPersistError()
+  const report = store.getLoadReport()
+  const dropped: string[] = []
+  if (report.droppedAttempts > 0) {
+    dropped.push(`${report.droppedAttempts} answer${report.droppedAttempts === 1 ? '' : 's'}`)
+  }
+  if (report.droppedCountry) dropped.push('the country')
+  if (report.droppedCampaign) dropped.push('the current cup run')
+
+  if (error === null && dropped.length === 0 && !report.corrupt) {
+    return (
+      <p data-testid="save-health" className="text-[15px] leading-relaxed text-white/70">
+        Saving normally. Every answer is written to this device as it happens.
+      </p>
+    )
+  }
+
+  return (
+    <div data-testid="save-health" className="flex flex-col gap-2 text-[15px] leading-relaxed">
+      {error !== null && (
+        <p className="rounded-xl bg-gold/15 p-3 text-white ring-1 ring-gold/40">
+          The last save did not write to this device (<code className="text-white/80">{error}</code>).
+          Play carries on from memory, but closing the app now would lose it. Export the save below
+          before closing, and check the browser is not in a private window or out of space.
+        </p>
+      )}
+      {report.corrupt && (
+        <p className="text-white/70">
+          The saved file could not be read at all when the app opened, so it started fresh. If there
+          is an export from before, import it below.
+        </p>
+      )}
+      {dropped.length > 0 && (
+        <p className="text-white/70">
+          When the app opened, {dropped.join(', ')} could not be read and {dropped.length === 1 && !dropped[0]!.includes('answers') ? 'was' : 'were'} left out. Everything else loaded normally.
+        </p>
+      )}
+    </div>
   )
 }
