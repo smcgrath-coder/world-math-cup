@@ -185,6 +185,10 @@ function Session({ onSaveReplaced }: { onSaveReplaced: () => void }) {
           setResult(advanceCampaign(played, fixture.isCampaign, campaign, country))
           setFixture(null)
         }}
+        // No result, no post-match, and the campaign is not touched: a fixture
+        // he walked out of is still there to be played. The answers he gave
+        // are in the log already, which is where his rating reads them from.
+        onLeave={() => setFixture(null)}
       />
     )
   }

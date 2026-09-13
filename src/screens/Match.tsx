@@ -390,9 +390,15 @@ export interface MatchProps {
   seed?: number
   matchId?: string
   onDone?: (result: MatchResult) => void
+  /**
+   * He walked off before the whistle. The answers he gave are already in the
+   * log by the time this fires; there is no result, because there was no
+   * result. A campaign fixture is left exactly as it was — still to be played.
+   */
+  onLeave?: () => void
 }
 
-export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: MatchProps) {
+export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone, onLeave }: MatchProps) {
   const country = useCountry()
   const settings = useSettings()
 
@@ -411,6 +417,17 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
   const [beat, setBeat] = useState<Beat | null>(null)
   /** Set only when we genuinely could not read what he typed. Never a score. */
   const [unreadable, setUnreadable] = useState(false)
+  /**
+   * He has tapped "Walk off" and is being asked whether he meant it.
+   *
+   * There used to be no way off the pitch before the whistle at all, on
+   * purpose: nothing to fat-thumb mid-question. That held until the first
+   * time he was 0–3 down against Brazil with eight questions to go and the
+   * only exit was killing the app — which lost the match anyway, and lost the
+   * answers he had given with it. So there is a way off, it is small, and it
+   * asks first.
+   */
+  const [leaving, setLeaving] = useState(false)
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
   /** How much of the log is already on disk. */
@@ -495,6 +512,14 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
     }
   }
 
+  const walkOff = (): void => {
+    for (const timer of timers.current) clearTimeout(timer)
+    timers.current = []
+    // Before telling anyone: the answers are the one thing that must survive.
+    flushTail(logRef.current, written, askedItems, questions)
+    onLeave?.()
+  }
+
   const ourName = country?.name ?? 'Your team'
   const ourKit = country?.kit ?? (['#fbbf24', '#14532d'] as const)
 
@@ -519,10 +544,48 @@ export function Match({ opponent, stakes = 'friendly', seed, matchId, onDone }: 
             <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
               {STAKES_LABEL[state.stakes]}
             </p>
-            <p className="text-sm font-bold text-white/60">
-              {state.phase === 'fulltime' ? 'Full time' : `Question ${asked} of ${QUESTIONS_PER_MATCH}`}
-            </p>
+            <div className="flex items-baseline gap-3">
+              <p className="text-sm font-bold text-white/60">
+                {state.phase === 'fulltime' ? 'Full time' : `Question ${asked} of ${QUESTIONS_PER_MATCH}`}
+              </p>
+              {onLeave !== undefined && state.phase !== 'fulltime' && !leaving && (
+                <button
+                  type="button"
+                  onClick={() => setLeaving(true)}
+                  className="rounded-lg px-2 py-0.5 text-xs font-bold text-white/45 ring-1 ring-white/15"
+                >
+                  Walk off
+                </button>
+              )}
+            </div>
           </div>
+
+          {leaving && (
+            <div
+              data-testid="walk-off"
+              className="mt-3 flex flex-col gap-3 rounded-2xl bg-black/30 p-3.5 ring-1 ring-white/10"
+            >
+              <p className="text-[15px] leading-snug">
+                Walk off now? This match just ends here. The maths you did still counts.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLeaving(false)}
+                  className="h-12 flex-1 rounded-xl bg-gold text-base font-black text-ink"
+                >
+                  Keep playing
+                </button>
+                <button
+                  type="button"
+                  onClick={walkOff}
+                  className="h-12 flex-1 rounded-xl bg-white/10 text-base font-bold text-white ring-1 ring-white/15"
+                >
+                  Yes, walk off
+                </button>
+              </div>
+            </div>
+          )}
 
           <div
             data-testid="scoreline"

@@ -565,6 +565,38 @@ describe('Match', () => {
     expect(said()).not.toMatch(/hard ball|on your record|what moved/i)
   })
 
+  it('lets him walk off before the whistle, asking first, and keeps every answer he gave', () => {
+    const left = vi.fn()
+    const handed = vi.fn()
+    render(<Match opponent={CURACAO} stakes="friendly" seed={SEED} matchId="m1" onDone={handed} onLeave={left} />)
+    const o = open(CURACAO, 'friendly', 'm1')
+
+    reachFinalThird(o)
+    const answered = o.state.log.length
+    expect(answered).toBeGreaterThan(0)
+
+    press(/walk off/i)
+    // Asks first: a fat thumb mid-question must not end a match.
+    expect(screen.getByTestId('walk-off')).toBeInTheDocument()
+    expect(left).not.toHaveBeenCalled()
+    press(/keep playing/i)
+    expect(screen.queryByTestId('walk-off')).toBeNull()
+    expect(left).not.toHaveBeenCalled()
+
+    press(/walk off/i)
+    press(/yes, walk off/i)
+    expect(left).toHaveBeenCalledTimes(1)
+    expect(handed).not.toHaveBeenCalled()
+    // Written before anyone was told, so the shell unmounting this screen next
+    // has nothing left to lose.
+    expect(getStore().getState().attempts).toHaveLength(answered)
+  })
+
+  it('offers no way off the pitch when nobody is listening for one', () => {
+    play()
+    expect(screen.queryByRole('button', { name: /walk off/i })).toBeNull()
+  })
+
   it('hands the whistle a scoreline and every question it asked', () => {
     const handed = vi.fn()
     const opponent = CURACAO

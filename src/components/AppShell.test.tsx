@@ -68,6 +68,26 @@ const goTo = (name: RegExp): void => {
 
 const tabsShowing = (): boolean => screen.queryByRole('navigation') !== null
 
+/**
+ * Answer until a miss actually lands and the ball is loose.
+ *
+ * `ALWAYS_WRONG` is only always wrong in a typed box. On a picked question the
+ * driver falls back to the first option, which is sometimes the right one —
+ * and the match's seed is the (faked, but real-time-started) clock, so which
+ * question opens the match differs from run to run. A single `answer` here
+ * passed for weeks and then failed once for exactly that reason.
+ */
+function missOne(): void {
+  for (let i = 0; i < 6; i++) {
+    if (screen.queryByText(/win it back/i) !== null) return
+    if (screen.queryByRole('button', { name: /inside the box/i }) !== null) {
+      fireEvent.click(screen.getByRole('button', { name: /inside the box/i }))
+    }
+    answer(ALWAYS_WRONG)
+  }
+  throw new Error('six answers and the ball was never loose')
+}
+
 /** Start a match against the first side on the fixture list. */
 function kickOff(): void {
   fireEvent.click(screen.getAllByTestId('fixture')[0]!)
@@ -243,8 +263,20 @@ describe('a match started from the fixture list', () => {
     kickOff()
 
     expect(screen.getByTestId('scoreline')).toBeInTheDocument()
-    // Nothing to fat-thumb mid-question. The way off the pitch is the whistle.
+    // Nothing to fat-thumb mid-question. The tab bar is gone; the only way off
+    // the pitch before the whistle is a small control that asks first.
     expect(tabsShowing()).toBe(false)
+  })
+
+  it('comes back to the fixtures when he walks off, with no result and no post-match', () => {
+    kickOff()
+    fireEvent.click(screen.getByRole('button', { name: /walk off/i }))
+    fireEvent.click(screen.getByRole('button', { name: /yes, walk off/i }))
+
+    expect(screen.queryByTestId('scoreline')).toBeNull()
+    expect(screen.getAllByTestId('fixture').length).toBeGreaterThan(0)
+    expect(tabsShowing()).toBe(true)
+    expect(document.body.textContent).not.toMatch(/full time|what moved|off the pitch/i)
   })
 
   it('is not remounted by its own writes', () => {
@@ -288,7 +320,7 @@ describe('a match started from the fixture list', () => {
 
     // A miss loosens the ball. With timers off there is no bar and no clock —
     // not a hidden one, not a long one.
-    answer(ALWAYS_WRONG)
+    missOne()
     expect(screen.getByText(/win it back/i)).toBeInTheDocument()
     expect(screen.queryByTestId('tackleback-bar')).not.toBeInTheDocument()
     expect(screen.getByText(/take as long as you like/i)).toBeInTheDocument()
@@ -296,7 +328,7 @@ describe('a match started from the fixture list', () => {
 
   it('draws the bar when timers are left on', () => {
     kickOff()
-    answer(ALWAYS_WRONG)
+    missOne()
 
     expect(screen.getByTestId('tackleback-bar')).toBeInTheDocument()
   })
