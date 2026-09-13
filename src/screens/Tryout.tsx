@@ -141,14 +141,45 @@ export function Tryout({ seed, onDone }: TryoutProps) {
   /** Set only when we genuinely could not read what he typed. Never a score. */
   const [unreadable, setUnreadable] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const written = useRef(false)
+  /** How many of `session.drafts` are already in the store. */
+  const written = useRef(0)
+  const latest = useRef(session)
+  useEffect(() => {
+    latest.current = session
+  }, [session])
 
-  useEffect(
-    () => () => {
+  /**
+   * Write whatever is not yet written. On the happy path this runs exactly
+   * once, at the end: one write, one notification, because twenty-four of
+   * each would be twenty-four re-renders on an iPad mid-session.
+   *
+   * It also runs when the app is hidden or the screen is torn down, because
+   * an iPad that goes to sleep at question twenty and gets reclaimed used to
+   * lose all twenty and start him again at one. A partial try-out is a real
+   * try-out: `tryoutRungs` replays whatever was answered, and the gate that
+   * skips the try-out reads the log once at launch, so a flush here never
+   * unmounts the screen under him.
+   */
+  const flush = (drafts: readonly AttemptDraft[]): void => {
+    if (drafts.length <= written.current) return
+    getStore().appendAttempts(drafts.slice(written.current))
+    written.current = drafts.length
+  }
+
+  useEffect(() => {
+    const onHide = (): void => {
+      if (document.visibilityState === 'hidden') flush(latest.current.drafts)
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
       if (timer.current !== null) clearTimeout(timer.current)
-    },
-    [],
-  )
+      flush(latest.current.drafts)
+    }
+    // `flush` only touches refs and the store, so it is stable in everything
+    // that matters; listing it would re-bind the listener on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const done = isComplete(session.state)
 
@@ -199,12 +230,10 @@ export function Tryout({ seed, onDone }: TryoutProps) {
       timer.current = null
       setSettling(false)
       setSession(next)
-      if (isComplete(next.state) && !written.current) {
-        written.current = true
-        // One write, one notification, at the end. Twenty-four of each would be
-        // twenty-four re-renders on an iPad mid-session.
-        getStore().appendAttempts(next.drafts)
-      }
+      // The answer is in `next` before React has rendered it, so it is flushed
+      // from `next` here rather than from the ref — the last question must
+      // not be the one that is lost.
+      if (isComplete(next.state)) flush(next.drafts)
     }, SETTLE_MS)
   }
 

@@ -44,6 +44,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
 })
 
 /**
@@ -130,6 +131,15 @@ const CLOCKS = [/time left/i, /seconds left/i, /countdown/i, /\d{1,2}:\d{2}/]
 const expectSilentAboutAnswers = (): void => {
   for (const pattern of JUDGEMENT) expect(said()).not.toMatch(pattern)
 }
+
+function setVisibility(state: 'hidden' | 'visible'): void {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+}
+const hide = (): void => setVisibility('hidden')
+const show = (): void => setVisibility('visible')
 
 describe('Tryout', () => {
   it('opens on a question and says where he is, not how he is doing', () => {
@@ -224,6 +234,44 @@ describe('Tryout', () => {
     // Twenty-four writes and twenty-four re-renders is not a thing to do to an
     // iPad, and half a session written to disk is worse than none.
     expect(writes).toBe(1)
+  })
+
+  it('saves what he has answered so far when the app is hidden, and never twice', () => {
+    // An iPad that goes to sleep at question twenty and gets reclaimed used to
+    // lose all twenty and start him again at one. Hidden is the last signal
+    // the screen gets before that, so it writes there — and the final write
+    // then covers only what is left.
+    let writes = 0
+    const stop = getStore().subscribe(() => {
+      writes += 1
+    })
+
+    render(<Tryout seed={SEED} />)
+    const run = perfectRun(SEED)
+    for (const given of run.slice(0, 10)) answer(given)
+    expect(getStore().getState().attempts).toHaveLength(0)
+
+    hide()
+    expect(getStore().getState().attempts).toHaveLength(10)
+    expect(writes).toBe(1)
+    // Still on question eleven — a flush never unmounts the screen under him.
+    expect(screen.getByText(/11 of 24/i)).toBeInTheDocument()
+
+    show()
+    for (const given of run.slice(10)) answer(given)
+    stop()
+
+    const attempts = getStore().getState().attempts
+    expect(attempts).toHaveLength(TRYOUT_LENGTH)
+    expect(new Set(attempts.map((a) => a.id)).size).toBe(TRYOUT_LENGTH)
+    expect(writes).toBe(2)
+  })
+
+  it('saves what he has answered so far when the screen is torn down', () => {
+    const { unmount } = render(<Tryout seed={SEED} />)
+    for (const given of perfectRun(SEED).slice(0, 7)) answer(given)
+    unmount()
+    expect(getStore().getState().attempts).toHaveLength(7)
   })
 
   it('records what he answered and how long it took, without ever showing it', () => {
