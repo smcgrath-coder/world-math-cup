@@ -40,10 +40,44 @@ export function TackleBack({ ms, timed, onExpire }: TackleBackProps) {
     expire.current = onExpire
   }, [onExpire])
 
+  // The clock only runs while he can see it. An iPad that goes to the home
+  // screen suspends timers and fires them the instant the app comes back, so
+  // a child who switched away for ten seconds mid-tackle-back returned to a
+  // ball that had already gone — the one clock in the game, expiring while he
+  // was not looking at it. Hidden pauses the clock; visible restarts it with
+  // whatever budget was left. (The bar's animation is not paused to match: it
+  // is decoration, and a bar that jumped backwards would read as a fault.)
   useEffect(() => {
     if (!timed) return
-    const timer = setTimeout(() => expire.current(), Math.max(0, ms))
-    return () => clearTimeout(timer)
+    let remaining = Math.max(0, ms)
+    let startedAt = Date.now()
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const stop = (): void => {
+      if (timer === null) return
+      clearTimeout(timer)
+      timer = null
+      remaining = Math.max(0, remaining - (Date.now() - startedAt))
+    }
+    const run = (): void => {
+      if (timer !== null) return
+      startedAt = Date.now()
+      timer = setTimeout(() => {
+        timer = null
+        expire.current()
+      }, remaining)
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'hidden') stop()
+      else run()
+    }
+
+    if (document.visibilityState !== 'hidden') run()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [timed, ms])
 
   return (

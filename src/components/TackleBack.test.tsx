@@ -10,6 +10,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
 })
 
 const said = (): string => document.body.textContent ?? ''
@@ -24,6 +25,15 @@ const wait = (ms: number): void => {
     vi.advanceTimersByTime(ms)
   })
 }
+
+function setVisibility(state: 'hidden' | 'visible'): void {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+}
+const hide = (): void => setVisibility('hidden')
+const show = (): void => setVisibility('visible')
 
 describe('TackleBack', () => {
   it('shows a visible bar while the ball is loose', () => {
@@ -47,6 +57,36 @@ describe('TackleBack', () => {
     render(<TackleBack ms={MS} timed onExpire={onExpire} />)
 
     wait(MS * 10)
+    expect(onExpire).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops the clock while the app is hidden and picks it up where it left off', () => {
+    // An iPad on the home screen suspends timers and fires them the moment the
+    // app comes back. Ten seconds away used to mean returning to a ball that
+    // had already gone, on the one clock the game has.
+    const onExpire = vi.fn()
+    render(<TackleBack ms={MS} timed onExpire={onExpire} />)
+
+    wait(3000)
+    hide()
+    wait(MS * 5)
+    expect(onExpire).not.toHaveBeenCalled()
+
+    show()
+    wait(MS - 3000 - 1)
+    expect(onExpire).not.toHaveBeenCalled()
+    wait(1)
+    expect(onExpire).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not restart from the top when the app comes back', () => {
+    const onExpire = vi.fn()
+    render(<TackleBack ms={MS} timed onExpire={onExpire} />)
+
+    wait(MS - 500)
+    hide()
+    show()
+    wait(500)
     expect(onExpire).toHaveBeenCalledTimes(1)
   })
 
