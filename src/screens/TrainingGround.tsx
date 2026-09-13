@@ -455,9 +455,13 @@ function Drill({
     timers.current.push(setTimeout(run, ms))
   }
 
+  // The answer he has just given lives in `result.next` until the
+  // acknowledgement or the coaching card is dismissed and `commit` runs. It is
+  // as real as anything in `session.pending`, and a nav tap during those 700ms
+  // used to lose it.
   useEffect(() => {
-    unwritten.current = session.pending
-  }, [session.pending])
+    unwritten.current = (result?.next ?? session).pending
+  }, [session, result])
 
   useEffect(
     () => () => {
@@ -555,13 +559,19 @@ function Drill({
     for (const timer of timers.current) clearTimeout(timer)
     timers.current = []
 
-    if (session.pending.length > 0) {
-      getStore().appendAttempts(session.pending)
-      setSession((current) => ({ ...current, pending: [] }))
+    // Including the answer still on its way through the acknowledgement — see
+    // `unwritten` above. "Done for now" during the 700ms after an answer is
+    // the commonest way to leave, and it must count that answer.
+    const live = result?.next ?? session
+    if (live.pending.length > 0) {
+      getStore().appendAttempts(live.pending)
+      unwritten.current = []
     }
+    setResult(null)
+    setSession({ ...live, pending: [] })
     // Nothing answered is not a session, and being shown a summary of nothing
     // would be a strange way to be told you changed your mind.
-    if (session.answered === 0) {
+    if (live.answered === 0) {
       onAgain()
       return
     }

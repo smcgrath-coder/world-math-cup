@@ -259,6 +259,36 @@ describe('TrainingGround', () => {
       expect(attempts.every((a) => STANDARDS_BY_STAT.DRI.includes(a.standardId))).toBe(true)
     })
 
+    it('keeps the answer he has just given when he leaves during the acknowledgement', () => {
+      // The draft sits in `result.next` for 700ms after an answer, and "Done
+      // for now" during that window used to write `session.pending` — which
+      // did not have it yet. The summary then undercounted and the log lost
+      // an answer he really gave.
+      render(<TrainingGround seed={SEED} />)
+      enter(/dribbling/i)
+
+      answer(ALWAYS_WRONG)
+      answer(ALWAYS_WRONG)
+      giveAnyAnswer(ALWAYS_WRONG) // the third, still on its card
+      fireEvent.click(screen.getByRole('button', { name: /done for now/i }))
+
+      expect(getStore().getState().attempts).toHaveLength(3)
+      expect(screen.getByText(/3 questions/i)).toBeInTheDocument()
+    })
+
+    it('keeps that answer when the screen is torn down under him too', () => {
+      // A tap on Play, Card or Settings in the tab bar unmounts the drill
+      // mid-acknowledgement. Same answer, same rule: never lose it.
+      const { unmount } = render(<TrainingGround seed={SEED} />)
+      enter(/dribbling/i)
+
+      answer(ALWAYS_WRONG)
+      giveAnyAnswer(ALWAYS_WRONG)
+      unmount()
+
+      expect(getStore().getState().attempts).toHaveLength(2)
+    })
+
     it('sticks to one topic when he picks one', () => {
       render(<TrainingGround seed={SEED} />)
       enter(/dribbling/i, /adding and subtracting fractions/i)
