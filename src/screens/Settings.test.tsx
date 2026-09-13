@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsScreen } from './Settings'
 import { STORAGE_KEY, getStore, resetStoreForTest } from '../store/storage'
+import { setLink, unlinkDevice } from '../sync/link'
 import type { AttemptDraft, Country } from '../store/storage'
 
 const COUNTRY: Country = {
@@ -94,10 +95,16 @@ describe('the sound switch', () => {
     expect(getStore().getState().settings.soundEnabled).toBe(false)
   })
 
-  it('says it is music only, because a surprise noise is the thing to warn about', () => {
+  it('says the one switch covers every noise, because a surprise noise is the thing to warn about', () => {
+    // This used to promise "no sound effects". The match has played them since
+    // the juice stubs landed — silently until the files exist, then audibly
+    // with no code change — so the promise had a shelf life and the honest
+    // one is that the switch covers all of it.
     open()
-    expect(screen.getByTestId('sound-note').textContent).toMatch(/music only/i)
-    expect(screen.getByTestId('sound-note').textContent).toMatch(/no sound effects/i)
+    const note = screen.getByTestId('sound-note').textContent
+    expect(note).toMatch(/everything that makes a noise/i)
+    expect(note).toMatch(/off means silent/i)
+    expect(note).not.toMatch(/no sound effects|music only/i)
   })
 })
 
@@ -155,6 +162,21 @@ describe('the parent view', () => {
     const note = screen.getByTestId('storage-note')
     expect(note.textContent).toMatch(/this device/i)
     expect(note.textContent).toMatch(/localstorage/i)
+    expect(note.textContent).toMatch(/nothing is sent anywhere/i)
+  })
+
+  it('stops claiming nothing leaves the device once it is linked to a family', () => {
+    setLink({ householdId: 'h1', playerId: 'p1', inviteCode: 'ABC123', playerName: 'Rion' })
+    try {
+      open()
+      parentView()
+      const note = screen.getByTestId('storage-note').textContent
+      expect(note).not.toMatch(/nothing is sent anywhere|this device only/i)
+      expect(note).toMatch(/linked to a family/i)
+      expect(note).toMatch(/localstorage/i)
+    } finally {
+      unlinkDevice()
+    }
   })
 
   it('hands over the whole save as text', () => {

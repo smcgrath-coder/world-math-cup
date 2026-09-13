@@ -233,12 +233,16 @@ describe('the fixture list', () => {
     expect(onKickoff.mock.calls[0]![1]).toBe('friendly')
   })
 
-  it('offers a knockout and says plainly that there is no tournament behind it', () => {
+  it('offers a knockout and says plainly that it is a one-off, not the cup', () => {
     const { onKickoff } = open()
     fireEvent.click(screen.getAllByTestId('fixture')[0]!)
     fireEvent.click(screen.getByRole('button', { name: /knockout/i }))
 
-    expect(screen.getByTestId('stakes-note').textContent).toMatch(/no tournament/i)
+    // "There is no tournament behind it yet" outlived the tournament by a
+    // month. The road to the cup sits two sections above this sentence.
+    const note = screen.getByTestId('stakes-note').textContent
+    expect(note).toMatch(/one-off/i)
+    expect(note).not.toMatch(/no tournament|yet/i)
 
     fireEvent.click(screen.getByRole('button', { name: /kick off/i }))
     expect(onKickoff.mock.calls[0]![1]).toBe('knockout')

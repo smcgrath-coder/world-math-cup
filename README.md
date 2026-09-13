@@ -20,7 +20,7 @@ npm run dev
 ```bash
 npx tsc -b --force   # must exit 0
 npm run lint         # must exit 0
-npm test             # 1434 tests
+npm test             # 1435 tests
 ```
 
 **`npm test` on its own is not enough.** vitest strips types without checking
@@ -62,9 +62,11 @@ the rating maths can change and history recomputes.
 ## Audio
 
 Five loops, one at a time, crossfaded — `src/audio/music.ts` picks the volume and
-`AppShell.trackFor` picks the track. Music only. There are no sound effects, and
-the settings copy says so, because an unexpected noise is the thing worth warning
-a child about.
+`AppShell.trackFor` picks the track. Sound effects are a handful of match moments
+(`src/audio/sfx.ts`: goal, whistle, save, crowd) that stay silent until a file
+exists in `public/audio/sfx/` and then simply start being heard. One switch in
+Settings covers all of it, and the copy says so, because an unexpected noise is
+the thing worth warning a child about.
 
 The files in `public/audio` are **built**, not dropped in. Generated music comes
 out as songs — fade in, play, fade out — and looping that dips to silence every
@@ -275,5 +277,7 @@ Different from the list above: these were decided against, not left undone.
   wrong for forgetting a convention reads as a trick. `=` would also mean
   rebuilding a pool that is strictly ordered by construction. Full reasoning in
   `docs/plans/2026-08-14-choice-questions-design.md`.
-- **Sound effects.** Music only, and the settings copy says so, because an
-  unexpected noise is the thing worth warning this child about.
+- **Sound effects beyond the four match moments.** Goal, whistle, save and crowd
+  are wired; nothing else gets a noise, because an unexpected noise is the thing
+  worth warning this child about, and one switch has to be able to silence all
+  of it.

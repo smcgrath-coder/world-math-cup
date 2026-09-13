@@ -510,7 +510,7 @@ function TeamSheet({
         <p data-testid="stakes-note" className="text-sm leading-relaxed text-white/70">
           {stakes === 'friendly'
             ? 'A friendly. They will sit off you a bit, and nothing is riding on it.'
-            : 'Knockout rules: they kick off, they keep the ball until you properly clear it, and they will punish a bad spell. There is no tournament behind it yet — it is the harder game, on its own.'}
+            : 'Knockout rules: they kick off, they keep the ball until you properly clear it, and they will punish a bad spell. This one is a one-off — the harder game, on its own. The cup is up above.'}
         </p>
 
         <button

@@ -3,6 +3,7 @@ import { CoachExplainer } from './CoachExplainer'
 import { FamilySync } from './FamilySync'
 import { useAttempts, useSettings } from '../store/useGameState'
 import { getStore, STORAGE_KEY } from '../store/storage'
+import { getLink } from '../sync/link'
 import { deriveRatings } from '../store/derive'
 import { isSyncConfigured } from '../sync/config'
 import { ALL_GENERATORS, generatorFor } from '../engine/items/generators'
@@ -64,8 +65,9 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
             onChange={(next) => getStore().updateSettings({ soundEnabled: next })}
           />
           <p data-testid="sound-note" className="text-[15px] leading-relaxed text-white/70">
-            Music only — a different loop for the training ground, a match and the tournament. There
-            are no sound effects, so nothing will ever go off unexpectedly.
+            One switch for everything that makes a noise: the music loops, and the few match sounds
+            (a whistle, a goal, a save) as they arrive. Off means silent, so nothing can go off
+            unexpectedly.
           </p>
         </section>
 
@@ -98,11 +100,26 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
 
             <div>
               <Heading>Where the save lives</Heading>
-              <p data-testid="storage-note" className="text-[15px] leading-relaxed text-white/70">
-                Everything is kept on this device only, in the browser&rsquo;s localStorage under{' '}
-                <code className="rounded bg-black/40 px-1">{STORAGE_KEY}</code>. Nothing is sent
-                anywhere, and clearing the browser&rsquo;s data for this site deletes it.
-              </p>
+              {/*
+                Two truths, and which one applies is read here rather than
+                assumed: "nothing is sent anywhere" was written before device
+                sync existed and stayed on screen after a device was linked.
+              */}
+              {getLink() === null ? (
+                <p data-testid="storage-note" className="text-[15px] leading-relaxed text-white/70">
+                  Everything is kept on this device only, in the browser&rsquo;s localStorage under{' '}
+                  <code className="rounded bg-black/40 px-1">{STORAGE_KEY}</code>. Nothing is sent
+                  anywhere, and clearing the browser&rsquo;s data for this site deletes it.
+                </p>
+              ) : (
+                <p data-testid="storage-note" className="text-[15px] leading-relaxed text-white/70">
+                  The save lives on this device, in the browser&rsquo;s localStorage under{' '}
+                  <code className="rounded bg-black/40 px-1">{STORAGE_KEY}</code>, and because this
+                  device is linked to a family it is also copied to the family&rsquo;s Supabase
+                  project and to any other linked device. Clearing the browser&rsquo;s data for this
+                  site deletes the copy here; the next launch pulls it back from the family.
+                </p>
+              )}
             </div>
 
             <div>

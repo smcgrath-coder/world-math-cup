@@ -855,7 +855,7 @@ function Summary({
           <p className="mt-3 text-[15px] leading-relaxed text-white/80">
             {climbed
               ? 'That’s the number you take into your next match.'
-              : 'That one’s still bedding in. Come back to it tomorrow — it moves.'}
+              : 'That one’s still bedding in. It moves, and every one of those counted.'}
           </p>
         </motion.div>
 
