@@ -575,3 +575,46 @@ describe('the words', () => {
     expect(agoLabel(120 * DAY)).toBe('four months ago')
   })
 })
+
+describe('summarise, with history that arrived from another device', () => {
+  it('counts synced attempts as before the match when they happened before it', () => {
+    // Ids pulled from another device are namespaced (`ipad-a000001`) and sort
+    // after every local `a…` id. Slicing "before" on the id alone therefore
+    // dropped a month of the iPad's history from the before-card the moment
+    // the laptop played a match, and counted it as "after".
+    const remote = (i: number, at: number): Attempt => ({
+      id: `ipad-a${String(i).padStart(6, '0')}`,
+      at,
+      standardId: 'MT.4.NF.1',
+      difficulty: 70,
+      params: {},
+      given: '1',
+      correct: true,
+      latencyMs: 2000,
+      context: 'training',
+    })
+    const local = (i: number, at: number, matchId?: string): Attempt => ({
+      ...remote(i, at),
+      id: `a${String(i).padStart(6, '0')}`,
+      difficulty: 40,
+      correct: false,
+      ...(matchId === undefined ? {} : { matchId, context: 'match' as const }),
+    })
+    const kickoff = NOW - 10 * MINUTE
+    const attempts: Attempt[] = [
+      ...Array.from({ length: 30 }, (_, i) => remote(i + 1, kickoff - (40 - i) * MINUTE)),
+      local(1, kickoff, 'm1'),
+      local(2, kickoff + MINUTE, 'm1'),
+    ]
+
+    const withHistory = summarise(attempts, 'm1')
+    const withoutHistory = summarise(attempts.filter((a) => a.matchId === 'm1'), 'm1')
+
+    // Thirty right answers at difficulty 70 before kickoff lift the "before"
+    // card well above a blank one. If they were being read as "after", both
+    // summaries would start from the same seed.
+    const before = (s: ReturnType<typeof summarise>) => s.moves.find((m) => m.stat === 'DRI')?.from ?? null
+    expect(before(withHistory)).not.toBeNull()
+    expect(before(withHistory)!).toBeGreaterThan(before(withoutHistory) ?? 50)
+  })
+})

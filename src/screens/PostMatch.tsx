@@ -116,6 +116,12 @@ export interface Summary {
 /** Attempts sort by minted id, which is the order they were appended in. */
 const byId = (a: Attempt, b: Attempt): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
+/** The same order `deriveRatings` folds the log in. Kept in step by `derive.test.ts`'s own check. */
+function byTime(a: Attempt, b: Attempt): number {
+  if (a.at !== b.at) return a.at - b.at
+  return byId(a, b)
+}
+
 /**
  * A standard this match visibly de-rusted, if any — the one with the biggest
  * gap closed, so a match that touches several rusted topics reports the one
@@ -202,10 +208,16 @@ export function crossings(played: readonly Attempt[], earlier: readonly Attempt[
 export function summarise(attempts: readonly Attempt[], matchId: string): Summary {
   const played = attempts.filter((a) => a.matchId === matchId).sort(byId)
   const first = played[0]
-  // Everything appended before this match's first answer. Sliced on the id
-  // rather than the clock, because ids are handed out in append order and two
-  // attempts can share a millisecond.
-  const earlier = first === undefined ? [...attempts] : attempts.filter((a) => a.id < first.id)
+  // Everything that happened before this match's first answer, in the order
+  // the ratings walk the log: by time, with the id breaking a same-millisecond
+  // tie. This used to compare ids alone, which was fine while every id was
+  // minted here — and wrong the day a second device joined: an attempt pulled
+  // from the iPad carries an id like `ipad-a000042`, which sorts after every
+  // local `a…` id however long ago it happened, so a synced month of history
+  // vanished from the "before" card and turned up as though it were played
+  // after this match.
+  const earlier =
+    first === undefined ? [...attempts] : attempts.filter((a) => a !== first && byTime(a, first) < 0)
   const kickoff = first?.at ?? Date.now()
   const whistle = played[played.length - 1]?.at ?? kickoff
 
