@@ -3,7 +3,7 @@ import { CoachExplainer } from './CoachExplainer'
 import { FamilySync } from './FamilySync'
 import { useAttempts, useSettings } from '../store/useGameState'
 import { getStore, STORAGE_KEY } from '../store/storage'
-import { getLink } from '../sync/link'
+import { getLink, unlinkDevice } from '../sync/link'
 import { deriveRatings } from '../store/derive'
 import { isSyncConfigured } from '../sync/config'
 import { ALL_GENERATORS, generatorFor } from '../engine/items/generators'
@@ -22,6 +22,9 @@ import { ALL_GENERATORS, generatorFor } from '../engine/items/generators'
  * haven't played since Tuesday". A guilt-trip about a missed day is the fastest
  * way to lose a child who already associates maths with being kept in.
  */
+/** How many of the most recent answers the grown-up list shows before asking. */
+export const ATTEMPTS_PAGE = 100
+
 export interface SettingsScreenProps {
   /** The save was wiped or replaced, so the shell must re-run its gates. */
   onSaveReplaced?: () => void
@@ -38,6 +41,7 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
   const [importText, setImportText] = useState('')
   const [importNote, setImportNote] = useState<string | null>(null)
   const [confirmingReset, setConfirmingReset] = useState(false)
+  const [showAllAttempts, setShowAllAttempts] = useState(false)
 
   // Re-reading the Coach is not a first read, so the gate flag is left alone —
   // `CoachExplainer` sets it on the way out and it is already set.
@@ -129,9 +133,16 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
 
             <div>
               <Heading>Every question answered</Heading>
+              {/*
+                The most recent page first, the rest on request. A season is a
+                few thousand rows, and this list re-sorted and re-rendered all
+                of them on every store commit — including the ones the match
+                makes every few answers while a parent has this open.
+              */}
               <ul className="flex flex-col gap-1.5">
                 {[...attempts]
                   .sort((a, b) => b.at - a.at)
+                  .slice(0, showAllAttempts ? attempts.length : ATTEMPTS_PAGE)
                   .map((a) => (
                     <li
                       key={a.id}
@@ -150,6 +161,16 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
                     </li>
                   ))}
               </ul>
+              {!showAllAttempts && attempts.length > ATTEMPTS_PAGE && (
+                <button
+                  type="button"
+                  data-testid="attempts-more"
+                  onClick={() => setShowAllAttempts(true)}
+                  className="mt-2 w-full rounded-xl bg-black/20 px-3 py-2 text-sm font-bold text-white/70 ring-1 ring-white/10"
+                >
+                  Show all {attempts.length}
+                </button>
+              )}
             </div>
 
             <div>
@@ -212,12 +233,22 @@ export function SettingsScreen({ onSaveReplaced }: SettingsScreenProps) {
                   <p className="text-[15px] leading-relaxed">
                     This deletes his country, his card and every question he has answered. It cannot
                     be undone.
+                    {getLink() !== null &&
+                      ' This device also leaves the family first, so the family’s copy of the save is not touched — link again to get it back.'}
                   </p>
                   <div className="mt-3 flex gap-2">
                     <Row onClick={() => setConfirmingReset(false)}>No, keep it</Row>
                     <Row
                       danger
                       onClick={() => {
+                        // Unlink *before* wiping. A linked device pushes when
+                        // its live state differs from what it last knew, and a
+                        // blank save differs from everything — so wiping first
+                        // could have sent the wipe up to the family and on to
+                        // the iPad. Unlinked, the blank save goes nowhere, the
+                        // family keeps the real one, and linking again adopts
+                        // it back.
+                        unlinkDevice()
                         getStore().resetAll()
                         setConfirmingReset(false)
                         onSaveReplaced?.()

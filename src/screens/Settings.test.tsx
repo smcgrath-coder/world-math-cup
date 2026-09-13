@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SettingsScreen } from './Settings'
+import { ATTEMPTS_PAGE, SettingsScreen } from './Settings'
 import { STORAGE_KEY, getStore, resetStoreForTest } from '../store/storage'
-import { setLink, unlinkDevice } from '../sync/link'
+import { getLink, setLink, unlinkDevice } from '../sync/link'
 import type { AttemptDraft, Country } from '../store/storage'
 
 const COUNTRY: Country = {
@@ -356,5 +356,55 @@ describe('how the save is doing', () => {
     const health = screen.getByTestId('save-health')
     expect(health).toHaveTextContent(/1 answer could not be read/i)
     expect(health).not.toHaveTextContent(/saving normally/i)
+  })
+})
+
+describe('delete everything, on a linked device', () => {
+  it('leaves the family first, so the wipe cannot be pushed to the other devices', () => {
+    setLink({ householdId: 'h1', playerId: 'p1', inviteCode: 'ABC123', playerName: 'Rion' })
+    try {
+      history()
+      render(<SettingsScreen />)
+      parentView()
+      fireEvent.click(screen.getByRole('button', { name: /delete everything/i }))
+      expect(screen.getByTestId('reset-confirm')).toHaveTextContent(/leaves the family first/i)
+
+      fireEvent.click(screen.getByRole('button', { name: /yes, delete it all/i }))
+      expect(getLink()).toBeNull()
+      expect(getStore().getState().attempts).toHaveLength(0)
+      expect(getStore().getState().country).toBeNull()
+    } finally {
+      unlinkDevice()
+    }
+  })
+
+  it('says nothing about a family when there is no link', () => {
+    render(<SettingsScreen />)
+    parentView()
+    fireEvent.click(screen.getByRole('button', { name: /delete everything/i }))
+    expect(screen.getByTestId('reset-confirm')).not.toHaveTextContent(/family/i)
+  })
+})
+
+describe('every question answered', () => {
+  it('shows the most recent page and the rest on request', () => {
+    history(ATTEMPTS_PAGE + 25)
+    render(<SettingsScreen />)
+    parentView()
+
+    expect(screen.getAllByTestId('attempt-row')).toHaveLength(ATTEMPTS_PAGE)
+    const more = screen.getByTestId('attempts-more')
+    expect(more).toHaveTextContent(String(ATTEMPTS_PAGE + 25))
+    fireEvent.click(more)
+    expect(screen.getAllByTestId('attempt-row')).toHaveLength(ATTEMPTS_PAGE + 25)
+    expect(screen.queryByTestId('attempts-more')).toBeNull()
+  })
+
+  it('asks for nothing when the log fits on one page', () => {
+    history(5)
+    render(<SettingsScreen />)
+    parentView()
+    expect(screen.getAllByTestId('attempt-row')).toHaveLength(5)
+    expect(screen.queryByTestId('attempts-more')).toBeNull()
   })
 })
